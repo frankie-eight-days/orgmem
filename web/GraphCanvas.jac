@@ -96,6 +96,23 @@ glob C_ART: str = "#6E7C93";
 glob WALK_COLOR: str = "#FFD166";
 glob BG: str = "#0b0e14";
 
+# The key, in the order a viewer meets these on screen. Shape matters as much as
+# hue here — `paint_node` gives Domain a ringed circle, Event a diamond, and
+# Department/Channel a square, so a legend of four coloured dots would document
+# the palette while hiding the actual encoding.
+#
+# Person and Artifact have no custom mark: they ride the library's own filled-dot
+# path, which is why they are listed as plain circle and dot. Keep this table in
+# agreement with `paint_node` and `hue_of` — nothing enforces that it stays true.
+glob LEGEND: list[dict[str, str]] = [
+    {"k": "Person",           "s": "circle",  "c": C_PERSON},
+    {"k": "Domain",           "s": "ring",    "c": C_DOMAIN},
+    {"k": "Event",            "s": "diamond", "c": C_EVENT},
+    {"k": "Dept / Channel",   "s": "square",  "c": C_DEPT},
+    {"k": "Artifact",         "s": "dot",     "c": C_ART},
+    {"k": "on the walk",      "s": "circle",  "c": WALK_COLOR}
+];
+
 # Near-white with a warm bias, so a lit node reads as lit against DIM_NODE at
 # 10% ink AND sits in the same family as the gold path without competing with
 # it. Pure #FFFFFF goes cold next to #FFD166 and looks like a rendering bug.
@@ -105,8 +122,19 @@ glob LIT_NODE: str = "#FFF4DA";
 # that reads as "quiet" on white reads as "gone" on #0b0e14 (§5A.2).
 glob DIM_NODE: str = "rgba(220,228,240,0.10)";
 glob DIM_LINK: str = "rgba(220,228,240,0.07)";
-glob IDLE_LINK: str = "rgba(220,228,240,0.24)";
-glob EGO_LINK: str = "rgba(220,228,240,0.13)";
+
+# Idle edge alphas, raised from 0.24 / 0.13. The old values were set against the
+# worry that light-on-dark accumulates — six overlapping strokes drift toward
+# white and sRGB compresses hard near black, so a safe alpha for one edge is a
+# haze for a bundle. That is real, but the correction overshot: at 0.24 the
+# backbone was barely separable from the ground and the ego edges were, in
+# practice, invisible.
+#
+# These are the highest values where a six-deep bundle still reads as strokes
+# rather than fog. If the canvas ever renders denser than 3k nodes, check this
+# again rather than assuming it still holds.
+glob IDLE_LINK: str = "rgba(226,234,246,0.42)";
+glob EGO_LINK: str = "rgba(226,234,246,0.24)";
 
 # Structural edges: ~260 of the 23,008 at the 3k slice. Everything else —
 # Authored, Mentions, Involves, Produced, InChannel, Subscribes — is mist and
@@ -515,11 +543,16 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
         return IDLE_LINK if l["__class"] == "backbone" else EGO_LINK;
     }
 
+    # Walked edges carry the answer, so they get the width budget: 3.2 against a
+    # 0.8 backbone is a 4x ratio, where 2.4 against 0.55 read as "slightly
+    # thicker" once the idle alphas came up. The idle widths rise too — a
+    # hairline at 0.30 disappears entirely on a high-DPI display, which is what
+    # made the ego edges look like they were not being drawn at all.
     def link_width(l: any) -> float {
         if l["__walked"] {
-            return 2.4;
+            return 3.2;
         }
-        return 0.55 if l["__class"] == "backbone" else 0.30;
+        return 0.8 if l["__class"] == "backbone" else 0.5;
     }
 
     # Walked edges are straight so the glow underlay in `render_pre` traces them
@@ -640,9 +673,25 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
                 ctx.closePath();
                 ctx.fill();
             } else {
+                # Department and Channel. These used to be stroke-only, which
+                # read as empty boxes — a hollow glyph among filled circles and
+                # diamonds looks like a rendering fault rather than a third
+                # type, and that is exactly how it was reported.
+                #
+                # Filled at reduced alpha with a solid edge instead: the square
+                # still reads as its own shape, but as a *quieter* node rather
+                # than an unfinished one. The fill goes on first so the stroke
+                # sits crisply on top of it.
+                ctx.beginPath();
+                ctx.fillStyle = col;
+                ctx.globalAlpha = 0.30;
+                ctx.rect(x - r, y - r, r * 2.0, r * 2.0);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
                 ctx.beginPath();
                 ctx.strokeStyle = col;
-                ctx.lineWidth = 1.2 / scale;
+                ctx.lineWidth = 1.4 / scale;
                 ctx.rect(x - r, y - r, r * 2.0, r * 2.0);
                 ctx.stroke();
             }
@@ -898,6 +947,68 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
                 linkHoverPrecision={2}
                 minZoom={0.05}
             />
+        }}
+        {#* The key. Drawn as SVG glyphs rather than coloured dots because the
+            canvas distinguishes types by SHAPE as well as hue — a circle, a
+            ringed circle, a diamond and a square — and a legend of four
+            identical dots would document the colours while hiding the thing a
+            viewer actually needs to decode. Each glyph here is the same
+            construction `paint_node` uses.
+
+            `pointer-events: none` throughout: the canvas underneath owns drag,
+            hover and click, and a legend that swallows a click on the node
+            behind it is worse than no legend. *#}
+        {if len(nodes) > 0 {
+            # Below the toolbar, not beside it. At `top: 12px` this sat directly
+            # on top of the node-count selector — `pointer-events: none` meant
+            # the buttons still worked, which is worse: a control you can click
+            # but cannot read. 72px clears the toolbar's height plus its offset.
+            #
+            # (A `{#* *#}` JSX comment does not go here. Inside an `{if cond {`
+            # body we are in Jac statement context, not JSX children, and the
+            # JSX comment form is a parse error there.)
+            <div style={{"position": "absolute", "top": "72px", "left": "12px",
+                         "padding": "10px 12px", "borderRadius": "8px",
+                         "background": "rgba(11,14,20,0.72)",
+                         "border": "1px solid rgba(226,234,246,0.10)",
+                         "backdropFilter": "blur(6px)",
+                         "pointerEvents": "none", "userSelect": "none",
+                         "fontFamily": "ui-monospace, monospace",
+                         "fontSize": "10px", "lineHeight": "1.9",
+                         "color": "rgba(220,228,240,0.62)", "zIndex": "3"}}>
+                {for (i, row) in enumerate(LEGEND) {
+                    <div key={row["k"]}
+                         style={{"display": "flex", "alignItems": "center",
+                                 "gap": "8px"}}>
+                        <svg width="14" height="14" viewBox="0 0 14 14"
+                             style={{"flex": "none", "display": "block"}}>
+                            {if row["s"] == "circle" {
+                                <circle cx="7" cy="7" r="4" fill={row["c"] as str} />
+                            }}
+                            {if row["s"] == "ring" {
+                                <g>
+                                    <circle cx="7" cy="7" r="3" fill={row["c"] as str} />
+                                    <circle cx="7" cy="7" r="5.5" fill="none"
+                                            stroke={row["c"] as str} strokeWidth="1" />
+                                </g>
+                            }}
+                            {if row["s"] == "diamond" {
+                                <path d="M 7 2 L 12 7 L 7 12 L 2 7 Z"
+                                      fill={row["c"] as str} />
+                            }}
+                            {if row["s"] == "square" {
+                                <rect x="2.5" y="2.5" width="9" height="9"
+                                      fill={row["c"] as str} fillOpacity="0.30"
+                                      stroke={row["c"] as str} strokeWidth="1.2" />
+                            }}
+                            {if row["s"] == "dot" {
+                                <circle cx="7" cy="7" r="2.2" fill={row["c"] as str} />
+                            }}
+                        </svg>
+                        <span>{row["k"]}</span>
+                    </div>
+                }}
+            </div>
         }}
         {if len(nodes) == 0 {
             <p style={{"position": "absolute", "top": "50%", "left": "50%",
