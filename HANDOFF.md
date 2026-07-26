@@ -12,7 +12,8 @@ cd orgmem && jac dev app.jac -p 8903
 ```
 
 - **App: http://localhost:8903/app** — the demo. **Site: http://localhost:8903/** — marketing.
-- `jac run main.jac` builds the graph (~6s, persisted). `jac check .` → 17 passed.
+- `jac run main.jac` builds the graph (~6s, persisted). `jac check .` → 25 passed.
+- **`jac run eval.jac`** reproduces the 94.7% — **stop the dev server first** (gotcha 13).
 
 ## THE RESTART RULE — most important line in this file
 
@@ -67,6 +68,17 @@ refuse connections and truncated the log mid-check.
     *"Cannot create property 'globalAlpha' on string"*.
 12. **`corpus.parquet`'s `actors`, `tags`, `artifact_ids` are JSON strings, not lists.** Without
     `json.loads()` you iterate single characters and silently build a graph with zero edges.
+13. **`jac dev` exposes NO `/walker/*` routes** — only `/function/<name>` for `def:pub`. `POST
+    /walker/EvalRun` 405s. That is why **`eval.jac`** exists: `jac run eval.jac` with the dev server
+    stopped is the only way to reproduce the benchmark. Both processes open the same `.jac/` store,
+    so do not run them at once.
+14. **`jac check` prints ~150 warnings for `main.jac` alone.** Always pipe it (`| tail -3`) or the
+    one line you need is buried. The check *hook* blocks on errors only, not warnings.
+15. **Adding a parameter to a walker method must be done in ONE edit with every call site**, or the
+    hook rejects the intermediate state and you cannot proceed. Write the method and all callers
+    together.
+16. **Returning a new `graphData` object re-heats the whole force simulation.** This is the single
+    biggest perf lever in the app — see the note below.
 
 ---
 
@@ -87,26 +99,62 @@ artifacts buys more credibility with these judges than another percentage point.
 
 ## Known state / open items
 
-**Working:** all four presets return correct answers checked against ground truth. Walk animates
-across the full graph with camera follow. Node-count selector 400/1k/3k/5k. Idle animation is zero
-(proven: two screenshots 6s apart are byte-identical). Physics bounded.
+**Working:** all four presets return correct answers checked against ground truth, and **all four
+now animate as connected trees** (they did not — `gap` and `who` had no path at all). Node cards
+open on click. Node-count selector 400/1k/3k/5k, **default 3k**. Walk playback speed 0.5/1/2/4x.
+Clear button. Composed radial layout with department sectors; mist edges hidden; labels paint.
 
-**Demo at 3k, not 400.** At 400 the Felix preset highlights 121 of 400 nodes — a gold blob. At 3k
-the ratio works and every route node is present. 3k is verified safe on this machine; **5k is
-untested — consider removing that button.**
+### The walk is a TREE now, not a star — and how
+
+`Visibility` used to record every reachable artifact as an edge from the person: 120 pairs, all
+sharing one source, depth 1. It rendered as a 120-spoke starburst that lit 121 of 400 nodes.
+Three changes in `main.jac`, all **display-only** (`cone` still decides the verdict and is built
+regardless, so the benchmark cannot move):
+
+- The **channel is recorded as its own hop**. `person -> #qa_support -> thread` was being
+  flattened to `person -> thread`, throwing away the only intermediate node in the route.
+- **`FAN_MAX`** caps recorded edges per source, so BFS renders as a tree that goes deep, not wide.
+- **`linked`** keeps it a tree rather than a forest. Without it the cap orphans subtrees: once the
+  person's budget is spent, later channels never get their connecting edge but their children
+  still record — measured 35 sources of which only 6 were reachable from the actor.
+
+Channels are traversed **before** authored artifacts, because the flat authored fan otherwise
+spends the whole budget on depth-1 spokes. Order does not change `cone` membership.
+
+Felix: 120 edges / 121 nodes / depth 1 → **30 edges / 31 nodes / depth 2 / 0 orphans**.
+
+### The perf fix that mattered
+
+`merge_walk` in `web/AppScreen.jac` returned a **new object** every answer. force-graph re-ingests
+and re-heats its simulation whenever `graphData` changes identity, so d3-force restarted over
+3,000 nodes and 23,000 links exactly when the walk began — the layout crawling under the walker
+*was* the lag. Measured: at 3k, **all 30 path edges and all path nodes are already in the slice**
+(`preset_seed` pins them), so the old unconditional append was also duplicating 30 links. It now
+returns `base` unchanged when nothing is missing. **Do not reintroduce a fresh object here.**
+
+### Contrast
+
+Type hues are tuned to sit calmly on `#0b0e14`, which is exactly what makes them read as *dark*
+once everything else drops to 10% ink. Lit nodes get a bright fill (`LIT_NODE`), the type hue as an
+inner ring, gold outside. The old "gold is a ring, never a fill" rule was defending against a
+121-node amber blob and no longer applies at 30 nodes.
 
 **Open, in value order:**
-1. **Wire the Janice onboarding preset** — `silence_EVT-7-employee_hired-1030_onboarding_session`,
+1. **Person card mis-maps two fields.** `role` is read from the departure REASON (Bill renders as
+   `role: "voluntary"`) and `dept` looks like the department that recorded the exit, not the one
+   they worked in. Visible if anyone clicks a departed person on stage. Unverified: whether
+   `authored_count: 0` is real for everyone or only for pre-window departures — check a current
+   employee before trusting any Person card.
+2. **Wire the Janice onboarding preset** — `silence_EVT-7-employee_hired-1030_onboarding_session`,
    ground truth **FALSE**. Bill left owning TitanDB with 20% documented; Janice was hired day 7 to
    inherit it; **she never got an onboarding session**; incidents follow. Best question in the
-   dataset and its answer is an absence. Needs `api.jac` + the preset list in `Shell.jac`.
-2. Path-node size is fixed at 6× — make it adaptive so long paths don't blob.
-3. Node labels don't paint (code and bundle look correct; likely sub-pixel at current zoom).
-4. Marketing site whitespace/layout — light theme and the "76,000+" figure are fixed; layout unverified.
-
-**A `Visibility` route is a one-hop STAR, not a journey** — `[[Janice, artifact1], [Janice,
-artifact2], …]`. It renders as a fan from a hub, which is honest but isn't a traversal. For a true
-multi-hop crossing you'd need a different query shape.
+   dataset and its answer is an absence.
+3. **5k is still untested** — consider removing that button before the demo.
+4. Marketing site layout unverified. A `site` worktree/branch exists at `../orgmem-site` on port
+   8910 and has not been merged.
+5. The `gap` route's third hop loops back to the trigger event (`EVT-38 -> CONF-HR-001 -> EVT-38`).
+   Honest — the causal closure includes the event that produced the artifact — but it draws as a
+   small loop.
 
 ---
 
