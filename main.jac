@@ -954,6 +954,12 @@ walker :pub GraphSlice {
 
 # ---------------------------------------------------------------- 2. Visibility
 
+# Max edges recorded per source node for the canvas animation. Display only —
+# see `Visibility.hop`. 5 keeps a walk under ~40 nodes, which reads as a route
+# on a projector; 120 (the old uncapped fan) read as a gold blob.
+glob FAN_MAX: int = 5;
+
+
 walker :pub Visibility {
     has actor: str = "";
     has as_of_day: int = 60;
@@ -963,6 +969,8 @@ walker :pub Visibility {
 
     has cone: list[str] = [];
     has path: list[list] = [];
+    has fan: dict[str, int] = {};
+    has linked: dict[str, bool] = {};
     has blocked: list[str] = [];
     has seen: dict[str, bool] = {};
     has ok: bool = True;
@@ -985,11 +993,42 @@ walker :pub Visibility {
         }
         p: Person = PEOPLE[self.actor];
         self.seen[p.gid] = True;
+        # The actor is the one node that is linked by definition — it is where
+        # the route starts, so `hop` has a root to grow the tree from.
+        self.linked[p.gid] = True;
         visit p;
     }
 
     # From a person: everything they wrote, and every event they were in.
+    #
+    # Channels are traversed FIRST, and the order is load-bearing for the
+    # display only. The authored artifacts are a flat person->artifact fan; the
+    # channels are the one branch with real depth under them. Running authored
+    # first spent the person's whole edge budget on depth-1 spokes and the walk
+    # flattened back to a star. Membership of `cone` — and therefore the
+    # verdict — is unaffected: an artifact reachable both ways is admitted once
+    # whichever arm reaches it first, so the set is identical either way.
     can at_person with Person entry {
+        # Public channels this person posts in. Anything said in a room you are
+        # in reaches you through normal channels, whether or not you replied —
+        # this is what "would they have learned about it" actually means.
+        #
+        # The channel is recorded as its own hop. Attributing these artifacts
+        # straight to the person (the old behaviour) threw away the only
+        # intermediate node in the route, which is why every recorded pair
+        # shared one source and the walk had no second hop to show. Reading
+        # `person -> #qa_support -> thread -> the page it cites` is the claim
+        # this demo is making; `person -> thread` was not.
+        if self.use_channels {
+            for ch in [here ->:Subscribes:->] {
+                self.hop(str(here.gid), str(ch.gid));
+                for a in [ch <-:InChannel:<-] {
+                    if self.admit(a, str(ch.gid)) {
+                        visit a;
+                    }
+                }
+            }
+        }
         for a in [here ->:Authored:->] {
             if self.admit(a, here.gid) {
                 visit a;
@@ -1003,22 +1042,8 @@ walker :pub Visibility {
                 continue;
             }
             self.seen[e.gid] = True;
-            if len(self.path) < 200 {
-                self.path.append([here.gid, e.gid]);
-            }
+            self.hop(str(here.gid), str(e.gid));
             visit e;
-        }
-        # Public channels this person posts in. Anything said in a room you are
-        # in reaches you through normal channels, whether or not you replied —
-        # this is what "would they have learned about it" actually means.
-        if self.use_channels {
-            for ch in [here ->:Subscribes:->] {
-                for a in [ch <-:InChannel:<-] {
-                    if self.admit(a, here.gid) {
-                        visit a;
-                    }
-                }
-            }
         }
     }
 
@@ -1050,6 +1075,38 @@ walker :pub Visibility {
         }
     }
 
+    # Records ONE edge for the canvas to animate. Traversal is deliberately NOT
+    # affected by this: `cone` — which decides the verdict — is built in
+    # `admit` regardless of whether the hop was recorded, so capping breadth
+    # here cannot move an eval score.
+    #
+    # The cap is the whole point. A person reaches ~120 artifacts in one step,
+    # and recording all of them produced a 120-spoke star: every pair shared
+    # the same source, so the "walk" was one hop replayed 16 times and 30% of
+    # the canvas turned gold. Capping the fan per source makes BFS render as a
+    # tree that goes DEEP instead of wide, which is what reads as traversal.
+    # `linked` is what keeps this a TREE rather than a forest. Without it the
+    # cap orphans whole subtrees: once the person's 5 slots are spent, the
+    # remaining channels never get their connecting edge, but their artifacts
+    # still record `channel -> artifact` — measured as 35 distinct sources of
+    # which only 6 were reachable from the actor. A route the audience cannot
+    # trace back to the person it started at is not a route.
+    def hop(src: str, dst: str) {
+        if len(self.path) >= 200 {
+            return;
+        }
+        if src not in self.linked {
+            return;
+        }
+        n: int = self.fan[src] if src in self.fan else 0;
+        if n >= FAN_MAX {
+            return;
+        }
+        self.fan[src] = n + 1;
+        self.linked[dst] = True;
+        self.path.append([src, dst]);
+    }
+
     # Time + access gate. Records the edge walked, for the frontend animation.
     def admit(a: any, src: str) -> bool {
         if a.gid in self.seen {
@@ -1068,9 +1125,7 @@ walker :pub Visibility {
             return False;
         }
         self.seen[a.gid] = True;
-        if len(self.path) < 200 {
-            self.path.append([src, a.gid]);
-        }
+        self.hop(src, a.gid);
         return True;
     }
 
@@ -1173,6 +1228,7 @@ walker :pub Visibility {
         # The walker's own `has` fields are echoed back in the HTTP envelope;
         # drop the traversal bookkeeping so the response stays small.
         self.seen = {};
+        self.fan = {};
         report {
             "actor": self.actor,
             "as_of_day": self.as_of_day,
