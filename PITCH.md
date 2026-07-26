@@ -153,34 +153,76 @@ happened, what a given person could have known at a point in time given their ac
 who actually holds knowledge of a system versus who merely mentioned it.
 
 **How we built it.** Everything load-bearing is Jac. `node`/`edge` archetypes model the
-domain; artifact types are separate node types so behaviour attaches per type via
-dispatch-on-arrival. Six walkers do ingest, graph slicing, visibility-cone reachability,
-gap scanning, expertise ranking and evaluation. Persistence is reachability from `root` —
-no database, no ORM, no save call. The UI is Jac client components; the client/server RPC
-is generated. **95% of the codebase is Jac; there is no JavaScript.**
+domain; the eight artifact kinds are separate node types, so behaviour attaches per type
+through dispatch-on-arrival — **32 walker abilities keyed on the node they land on**
+(`can at_artifact with Artifact entry`, `can at_domain with Domain entry`,
+`can finish with Hub exit`). Ten walkers do ingest, graph slicing, visibility-cone
+reachability, gap scanning, expertise ranking, event resolution, departure analysis, node
+cards and evaluation. Persistence is reachability from `root` — no database, no ORM, no
+save call. The UI is Jac client components and the client/server RPC is generated. There
+is **no JavaScript in the codebase**.
 
-**Accomplishments.** 94.7% on the dataset's 78 ground-truth questions — 26/27 on the
-"silence" class against a 55.6% baseline. We deliberately decline to score the
-counterfactual class rather than claim causal reasoning we can't verify from artifacts.
+**The agent, and the line we refuse to cross.** You ask in English. An LLM
+(`kimi-for-coding-highspeed`) runs in a tool-calling loop where **the tools *are* the
+walkers** — `find_event`, `gap_scan`, `who_knows`, `could_have_known`, `inherited`,
+`describe_node`, `neighbors` — and it composes them across turns. Ask *"which incidents
+never got a postmortem?"* and it resolves twelve incidents, then fans out twelve
+exhaustive gap scans in a single turn. Every tool call and its result streams into the
+panel as it lands, and the union of the walkers' routes animates on the graph.
 
-**What we learned.** Several things about the Jac client that aren't in the docs: walkers
-register only for the entry module; `sv import` of a same-project server module silently
-flips the build into microservice mode; and HMR leaves stale modules that 500 on the next
-call, so restart `jac dev` after editing any `.jac`.
+The division of labour is the whole design: **the model chooses which tool to call; the
+walkers decide what is true.** Every verdict, citation and "N records examined" comes from
+a deterministic traversal — the same code path the benchmark scores. `describe_node`
+strips artifact bodies rather than truncating them, so the model *cannot* read the corpus
+and *cannot* turn a proven absence into a maybe. Ask the pane what tools it has and it
+tells you so itself.
 
-**What's next.** The inferred knowledge layer — typed `by llm()` judgements separating
-demonstrated ownership from passing mention — layered onto the structural graph that
-already exists.
+**Accomplishments.** 94.7% overall (54/57 scored) on the dataset's ground-truth questions
+— **96.3% on the "silence" class against a 55.6% constant baseline**. We deliberately
+decline to score the 21 counterfactual questions rather than claim causal reasoning we
+cannot verify from artifacts. The benchmark was re-run after the agent loop landed and is
+**unchanged to the question** — because the model never touches the scored path.
+
+**Challenges.** The interesting one was a failure the agent found for us. Asked whether a
+new hire was ever onboarded, it searched for an onboarding event, found none, and answered
+"no" — right answer, no proof, and exactly the failure this project exists to beat:
+*not-found is not absence*. It now knows that an empty search means resolution failed, and
+that absence is only ever established by an exhaustive `gap_scan` over the causal closure.
+
+**What we learned.** Things about Jac that aren't in the docs: walkers register only for
+the entry module; `sv import` of a same-project server module silently flips the build
+into microservice mode; typed locals compile to `const`, so a loop that rebinds one dies
+silently; and `pkill` on the dev server leaves an orphaned API child serving stale code.
+All eighteen are written up in `HANDOFF.md`.
+
+**What's next.** Letting the agent write back — proposing the missing document and the
+person to own it, as a node in the same graph it just proved the gap in.
 
 ---
 
 ## Submission checklist
 
-- [ ] GitHub repo public — https://github.com/frankie-eight-days/orgmem
-- [ ] Demo video recorded
-- [ ] Written description includes how Jac/Jaseci was used *(the "How we built it" section)*
-- [ ] **⭐ Star github.com/jaseci-labs/jac** — an explicit requirement
-- [ ] Deployed to jachammer.ai, env vars set there (not committed)
-- [ ] Tracks selected — Agentic AI + one domain track + JacHammer
+- [x] GitHub repo public — https://github.com/frankie-eight-days/orgmem *(verified)*
+- [x] **⭐ Star github.com/jaseci-labs/jac** — an explicit requirement *(verified set)*
+- [ ] Demo video recorded ← **the long pole; nothing else is blocking**
+- [ ] Written description includes how Jac/Jaseci was used *(paste "Devpost copy" above)*
+- [ ] Tracks selected — see below
 - [ ] **Partial submission by 17:50** — required to be judged, editable afterwards
 - [ ] Final by 19:15 — hard, no late entries
+
+**There is no deployment step.** An earlier version of this list said "deploy to
+jachammer.ai". No such site exists — **JacHammer is an award, not a product** (the SF
+rename of "Best Use of Jac", $500), and the field manual records that a web search
+hallucinated a JacHammer product and that the finding was discarded. That hallucination
+had survived into this checklist. Judging is an in-person live demo — *"working demos beat
+slide decks"* — so the demo runs from the laptop and the submission carries the repo URL
+and the video.
+
+## Tracks — enter all four, entry is free
+
+| track | the sentence to lead with |
+|---|---|
+| **Agentic AI** (flagship) | An LLM in a tool-calling loop where the tools are graph walkers — it composes twelve exhaustive scans in one turn, and it cannot state anything a traversal did not return. |
+| **Best JacHammer** ($500) | Ten walkers, 32 dispatch-on-arrival abilities, persistence by root-reachability, one language front to back, zero JavaScript. The award rewards the most *idiomatic* Jac, and the whole argument here — that a graph can prove a negative — is only expressible as traversal. |
+| **AI for Defense** ($500, Initium) | Brief explicitly names *"decision support"* and *"security"*. "Who could have known what, on which day, given their access" is a compartmentalisation question; "what was never written down" is a readiness one. Honest fit, not a stretch. |
+| Domain track | Whichever fits the room — the corpus is a company's own record. |
