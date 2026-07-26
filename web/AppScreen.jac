@@ -155,24 +155,61 @@ def merge_walk(base: dict[str, any], ans: dict[str, any]) -> dict[str, any] {
         return base;
     }
 
-    have: list[str] = [n["id"] as str for n in nodes];
-    out_nodes: list = [n for n in nodes];
+    have: dict[str, bool] = {};
+    for n in nodes {
+        have[n["id"] as str] = True;
+    }
+    add_nodes: list = [];
     for gid in wanted {
         if gid not in have {
-            have.append(gid);
-            out_nodes.append({"id": gid, "name": short_name(gid),
+            have[gid] = True;
+            add_nodes.append({"id": gid, "name": short_name(gid),
                               "type": kind_of(gid), "dept": ""});
         }
     }
 
-    # Every path edge is added outright. Checking for an existing link first
-    # would cost 25 x 2313 string compares for, measured, zero hits.
-    out_links: list = [l for l in links];
-    for pair in path {
-        out_links.append({"source": pair[0] as str, "target": pair[1] as str,
-                          "type": "walk"});
+    # Undirected index of the links already rendered. `source`/`target` are
+    # plain ids on arrival but the force simulation SWAPS them for the node
+    # objects once it has ingested the data, so both forms have to be read.
+    seen_e: dict[str, bool] = {};
+    for l in links {
+        s: any = l["source"];
+        t: any = l["target"];
+        sid: str = (s["id"] as str) if (s and s["id"]) else (s as str);
+        tid: str = (t["id"] as str) if (t and t["id"]) else (t as str);
+        seen_e[sid + "|" + tid] = True;
+        seen_e[tid + "|" + sid] = True;
     }
-    return {"nodes": out_nodes, "links": out_links, "counts": base["counts"]};
+    add_links: list = [];
+    for pair in path {
+        if (pair[0] as str) + "|" + (pair[1] as str) not in seen_e {
+            add_links.append({"source": pair[0] as str, "target": pair[1] as str,
+                              "type": "walk"});
+        }
+    }
+
+    # THE PERF FIX, and it is worth more than any render tuning: when the slice
+    # already contains the whole route, hand back the SAME object. force-graph
+    # re-ingests and re-heats its simulation whenever `graphData` is a new
+    # object, so returning a fresh one here restarted d3-force over 3,000 nodes
+    # and 23,000 links at the exact moment the walk began — the layout crawling
+    # under the walker was the lag.
+    #
+    # Measured at the 3k slice: all 30 of Felix's path edges and all of its
+    # nodes are ALREADY present, because `preset_seed` pins every preset's
+    # nodes into every slice and brings their real neighbours. So the common
+    # case is now zero additions, and the old unconditional append was also
+    # duplicating all 30 edges on top of the ones already being drawn.
+    #
+    # The previous note here said checking first cost "25 x 2313 compares for
+    # zero hits". That was measured at 400 nodes against the old 121-node star,
+    # before the walker recorded a bounded tree. It is a dict lookup now.
+    if len(add_nodes) == 0 and len(add_links) == 0 {
+        return base;
+    }
+    return {"nodes": [n for n in nodes] + add_nodes,
+            "links": [l for l in links] + add_links,
+            "counts": base["counts"]};
 }
 
 def:pub AppScreen -> JsxElement {
@@ -337,6 +374,16 @@ def:pub AppScreen -> JsxElement {
         speed = m;
     }
 
+    # Put the canvas back to its resting state without re-fetching. `answer` is
+    # what everything downstream keys on: the highlight, the walk, the panel,
+    # and `view` (which collapses back to `graph` because `merge_walk` sees an
+    # empty route). Deliberately does NOT touch `graph` or `cap` — refetching
+    # the slice would reshuffle a layout the audience has already learned.
+    def clear_walk {
+        answer = BLANK;
+        step = 0;
+    }
+
     vnodes: list = (view["nodes"] as list) if (view and view["nodes"]) else [];
     vlinks: list = (view["links"] as list) if (view and view["links"]) else [];
 
@@ -364,6 +411,16 @@ def:pub AppScreen -> JsxElement {
             <SpeedButton mult={1.0} label="1x" current={speed} onPick={set_speed} />
             <SpeedButton mult={2.0} label="2x" current={speed} onPick={set_speed} />
             <SpeedButton mult={4.0} label="4x" current={speed} onPick={set_speed} />
+            {if len(path) > 0 or len(hl) > 0 {
+                <button onClick={clear_walk}
+                        style={{"padding": "3px 9px", "borderRadius": "6px",
+                                "cursor": "pointer", "fontSize": "12px",
+                                "marginLeft": "6px", "color": "#FFD166",
+                                "background": "transparent",
+                                "border": "1px solid rgba(255,209,102,0.45)"}}>
+                    {"clear"}
+                </button>
+            }}
             <span style={{"opacity": "0.6"}}>
                 {"loading…" if loading
                  else (str(len(vnodes)) + " nodes · " + str(len(vlinks)) + " edges")}

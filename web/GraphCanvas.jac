@@ -96,6 +96,11 @@ glob C_ART: str = "#6E7C93";
 glob WALK_COLOR: str = "#FFD166";
 glob BG: str = "#0b0e14";
 
+# Near-white with a warm bias, so a lit node reads as lit against DIM_NODE at
+# 10% ink AND sits in the same family as the gold path without competing with
+# it. Pure #FFFFFF goes cold next to #FFD166 and looks like a rendering bug.
+glob LIT_NODE: str = "#FFF4DA";
+
 # Raised from the light-theme values: sRGB is steep near black, so an alpha
 # that reads as "quiet" on white reads as "gone" on #0b0e14 (§5A.2).
 glob DIM_NODE: str = "rgba(220,228,240,0.10)";
@@ -553,12 +558,20 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
         return WALK_COLOR;
     }
 
+    # A lit node is painted BRIGHT, not merely un-dimmed. The type hues are
+    # chosen to sit calmly on #0b0e14 at rest, which is exactly what makes them
+    # read as dark once every other node has dropped to 10% ink — the contrast
+    # the eye judges is lit-vs-dimmed, and a mid-blue against near-black does
+    # not carry it.
+    #
+    # The earlier rule was "gold is a ring, never a fill", because filling a
+    # 121-node path made one amber blob. That path is 30 nodes now, so the
+    # constraint it was defending against no longer exists and the fill is
+    # affordable. Hue survives as the ring in `paint_node`, so type is still
+    # legible on the route.
     def node_color(n: any) -> str {
         if (n["id"] as str) in lit_map {
-            # Focus keeps its hue, except for the artifact grey, which is too
-            # dark to read as "lit" sitting on the gold path — it gets ink.
-            hue: str = n["__hue"] as str;
-            return "#DCE4F0" if hue == C_ART else hue;
+            return LIT_NODE;
         }
         return DIM_NODE if walking else (n["__hue"] as str);
     }
@@ -635,14 +648,20 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
             }
         }
 
-        # Gold is a RING on a walked node, never a fill: reserving the fill for
-        # the edges and the active hop is what stops a 121-node path reading as
-        # one amber blob.
+        # Two rings on a lit node: the type hue immediately outside the bright
+        # fill, so the route still says WHAT each node is, then gold outside
+        # that to bind it to the path. The fill went bright (see `node_color`)
+        # because a 30-node path can carry it where a 121-node one could not.
         if on {
             ctx.beginPath();
+            ctx.strokeStyle = n["__hue"] as str;
+            ctx.lineWidth = 1.4 / scale;
+            ctx.arc(x, y, r + 1.6, 0, TAU);
+            ctx.stroke();
+            ctx.beginPath();
             ctx.strokeStyle = WALK_COLOR;
-            ctx.lineWidth = 1.6 / scale;
-            ctx.arc(x, y, r + 2.2, 0, TAU);
+            ctx.lineWidth = 2.0 / scale;
+            ctx.arc(x, y, r + 3.4, 0, TAU);
             ctx.stroke();
         }
     }
