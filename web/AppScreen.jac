@@ -41,6 +41,35 @@ import from .GraphCanvas { SpeedButton }
 
 glob HOP_MS: int = 380;
 
+# How many prior turns of the conversation travel with each question. Enough
+# for "her" or "it" to resolve against the answer above; short enough that the
+# reference block stays small. Each entry is truncated — pronouns need the
+# subject, not the whole paragraph.
+glob HISTORY_TURNS: int = 6;
+glob HISTORY_CHARS: int = 260;
+
+# The conversation so far, flattened for the server. Built from `thread`
+# rather than kept on the server: the RPC is stateless by design, and this
+# keeps it that way.
+def history_of(msgs: list) -> str {
+    lines: list[str] = [];
+    start: int = len(msgs) - HISTORY_TURNS;
+    if start < 0 {
+        start = 0;
+    }
+    for m in msgs[start:] {
+        who: str = "User" if (m["role"] as str) == "user" else "Assistant";
+        body: str = (m["text"] as str) if m["text"] else "";
+        if (m["role"] as str) == "bot" and m["verdict"] {
+            body = (m["verdict"] as str) + " — " + body;
+        }
+        if body {
+            lines.append(who + ": " + body[:HISTORY_CHARS]);
+        }
+    }
+    return "\n".join(lines);
+}
+
 # Mirrors MAX_TURNS in api.jac. Held here rather than read off the response:
 # the dev server pins a function's response shape at registration, so keys
 # added to `agent_step`'s return later in the session never reach the client —
@@ -321,6 +350,9 @@ def:pub AppScreen -> JsxElement {
         # with no error anywhere. Mutating a list's contents is safe where
         # rebinding a binding is not.
         carry: list[str] = [""];
+        # Snapshotted BEFORE the user turn is appended, so the question does
+        # not appear in its own history.
+        past: list[str] = [history_of(thread)];
         got: list[any] = [{}];
         seen: list[any] = [[]];
         hops: list[int] = [0];
@@ -330,7 +362,8 @@ def:pub AppScreen -> JsxElement {
             # named `state` because the RPC turns the caller's variable names
             # into the JSON keys.
             state: str = carry[0];
-            r: dict[str, any] = await agent_step(text, state);
+            history: str = past[0];
+            r: dict[str, any] = await agent_step(text, state, history);
             if not r {
                 break;
             }

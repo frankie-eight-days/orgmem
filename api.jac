@@ -1275,7 +1275,7 @@ def:pub agent(text: str) -> dict[str, any] {
 # the client can loop and paint each turn as it lands. State travels in the
 # round trip rather than living on the server: no session table, no expiry, no
 # cross-request races, and a reload simply starts a new question.
-def:pub agent_step(text: str, state: str) -> dict[str, any] {
+def:pub agent_step(text: str, state: str, history: str) -> dict[str, any] {
     if not api_key() {
         one: dict[str, any] = chat(text, "");
         return {"done": True, "state": "", "steps": [], "answer": one,
@@ -1296,8 +1296,20 @@ def:pub agent_step(text: str, state: str) -> dict[str, any] {
         }
     }
     if not msgs {
-        msgs = [{"role": "system", "content": agent_system()},
-                {"role": "user", "content": text}];
+        # Prior turns are replayed as ONE reference message rather than as a
+        # real transcript. The loop rewrites `msgs` every step, so replaying
+        # tool calls verbatim would re-enter old tool_call/tool pairs and the
+        # model would answer the previous question again. A summary carries
+        # what pronouns need — who "her" is, which subsystem "it" was — without
+        # dragging the old plan along with it.
+        msgs = [{"role": "system", "content": agent_system()}];
+        if history {
+            msgs.append({"role": "user",
+                         "content": "Earlier in this conversation (context only — do not re-answer these):\n"
+                                    + history
+                                    + "\n\nResolve any pronoun or bare name in the next question against the above."});
+        }
+        msgs.append({"role": "user", "content": text});
     }
 
     turn += 1;
