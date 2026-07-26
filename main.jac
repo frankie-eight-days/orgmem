@@ -1545,6 +1545,62 @@ walker :pub WhoKnows {
 }
 
 
+# ------------------------------------------------------- 4a. EventSearch
+
+# The resolver the agent loop leans on hardest. A question names an event in
+# words — "the incident on day 25", "when Janice was hired" — and a walker
+# needs an id. This turns the words into ids and returns NOTHING when there is
+# no match, which is what stops the model inventing one: it cannot proceed
+# past an empty result, and the loop reports the miss rather than guessing.
+#
+# All three filters are optional and AND together. `event_type` matches as a
+# substring so "incident" finds "incident_opened".
+walker :pub EventSearch {
+    has day: int = -1;
+    has event_type: str = "";
+    has actor: str = "";
+    has limit: int = 12;
+
+    has hits: list[dict[str, any]] = [];
+
+    can start with Root entry { visit HUB; }
+
+    can begin with Hub entry {
+        want: str = self.event_type.lower();
+        who: str = self.actor.lower();
+        for (gid, e) in EVENTS.items() {
+            if self.day >= 0 and int(e.day) != self.day {
+                continue;
+            }
+            if want and want not in str(e.event_type).lower() {
+                continue;
+            }
+            people: list[str] = [str(p.name) for p in [e ->:Involves:->]];
+            if who {
+                found: bool = False;
+                for p2 in people {
+                    if who in p2.lower() {
+                        found = True;
+                    }
+                }
+                if not found {
+                    continue;
+                }
+            }
+            if len(self.hits) >= self.limit {
+                break;
+            }
+            self.hits.append({
+                "event_id": str(e.gid), "event_type": str(e.event_type),
+                "day": int(e.day), "is_incident": bool(e.is_incident),
+                "involves": people[:6]
+            });
+        }
+        report {"count": len(self.hits), "events": self.hits};
+    }
+}
+
+
 # --------------------------------------------------------- 4b. Inherited
 
 # "Nobody onboarded the new hire — so whose work did they inherit?"

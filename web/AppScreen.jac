@@ -35,7 +35,7 @@ walker while the audience is trying to follow a token across it.
 """
 
 import from react { useEffect }
-sv import from ..api { graph_data, ask, node_card, chat }
+sv import from ..api { graph_data, ask, node_card, chat, agent }
 import from .Shell { Shell }
 import from .GraphCanvas { SpeedButton }
 
@@ -290,8 +290,7 @@ def:pub AppScreen -> JsxElement {
         busy = True;
         thread = thread + [{"role": "user", "text": text, "verdict": "",
                             "reason": "", "evidence": [], "route": ""}];
-        ctx_domain: str = ctx;
-        a: dict[str, any] = await chat(text, ctx_domain);
+        a: dict[str, any] = await agent(text);
         if not a {
             busy = False;
             return;
@@ -304,7 +303,8 @@ def:pub AppScreen -> JsxElement {
         # graph…" on screen until there is something to show.
         pending = {"role": "bot", "text": a["say"], "verdict": a["verdict"],
                    "reason": a["reason"], "evidence": a["evidence"],
-                   "route": a["route"], "chips": a["chips"]};
+                   "route": a["route"], "chips": a["chips"],
+                   "trace": a["trace"] if a["trace"] else []};
     }
 
     # Clicking a dot opens the artifact it stands for. The anchor is set before

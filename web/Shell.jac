@@ -220,8 +220,30 @@ def:pub Bubble(msg: dict[str, any], onSend: Callable[[str], None]) -> JsxElement
     # Present only on the help and out-of-scope answers, and absent entirely on
     # every walker answer — so it is read defensively, not indexed.
     chips: list[str] = (msg["chips"] as list[str]) if msg["chips"] else [];
+    # The tools the agent actually called, in order. This is the derivation,
+    # so it is rendered ABOVE the answer — the panel reads top to bottom the
+    # way the work happened.
+    steps: list[dict[str, any]] = (msg["trace"] as list[dict[str, any]]) if msg["trace"] else [];
 
     return <div style={{"marginBottom": "20px"}}>
+        {if len(steps) > 0 {
+            <div style={{"marginBottom": "12px", "paddingLeft": "10px",
+                         "borderLeft": "2px solid #26304a"}}>
+                {for (i, s) in enumerate(steps) {
+                    <div key={str(i)} style={{"marginBottom": "5px"}}>
+                        <p style={{"fontSize": "11px", "margin": "0",
+                                   "fontFamily": "ui-monospace, monospace",
+                                   "color": "#7fb2ff"}}>
+                            {(s["tool"] as str) + "(" + (s["args"] as str) + ")"}
+                        </p>
+                        <p style={{"fontSize": "11px", "margin": "1px 0 0 0",
+                                   "opacity": "0.55"}}>
+                            {"↳ " + (s["note"] as str)}
+                        </p>
+                    </div>
+                }}
+            </div>
+        }}
         {if verdict != "" {
             <p style={{"fontSize": "16px", "fontWeight": "600",
                        "margin": "0 0 6px 0", "color": "#ffd166"}}>{verdict}</p>

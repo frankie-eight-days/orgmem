@@ -22,7 +22,7 @@ import os;
 import json;
 import urllib.request;
 import from http { HTTPMethod }
-import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand, NodeCard, Inherited }
+import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand, NodeCard, Inherited, EventSearch }
 
 glob HERE: str = os.path.dirname(os.path.abspath(__file__));
 
@@ -420,8 +420,15 @@ def known_domains -> list[str] {
             names = [str(x) for x in p["known"]];
         }
     }
-    DOMAIN_CACHE["names"] = names;
-    DOMAIN_CACHE["ready"] = True;
+    # An EMPTY result is not cached. This bit once already: the first call can
+    # land before the graph is warm, and caching that answer left the model
+    # with an empty subsystem vocabulary in its prompt for the rest of the
+    # process — so every domain it extracted failed validation and silently
+    # became "". Cache a real answer or try again next time.
+    if names {
+        DOMAIN_CACHE["names"] = names;
+        DOMAIN_CACHE["ready"] = True;
+    }
     return names;
 }
 
@@ -721,6 +728,17 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
         a = who_answer_for(dom);
         route = f"WhoKnows(domain={dom}, as_of_day=60)";
         ctx = dom;
+        # An unknown subsystem comes back in the ERROR shape, which has no
+        # `bus`/`doc` keys — interpolating them unconditionally 500'd the whole
+        # request, so a judge typing a subsystem name slightly wrong crashed
+        # the pane instead of being told the name was wrong.
+        if "bus" not in a {
+            a["say"] = f"'{dom}' is not a subsystem in this graph. Known: " + ", ".join(known_domains()[:8]);
+            a["route"] = route;
+            a["ctx_domain"] = ctx_domain;
+            a["chips"] = [];
+            return a;
+        }
         top: str = str(a["top"]) if "top" in a else "";
         if kind == "best" {
             a["title"] = f"Who is the best person to pick up {dom}?";
@@ -796,4 +814,315 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
     a["route"] = route + ("  ·  parsed by " + slots["by"] if "by" in slots else "");
     a["ctx_domain"] = ctx;
     return a;
+}
+
+
+# ------------------------------------------------------------- 6. the agent
+#
+# The pane's real entry point. `chat` above resolves a sentence to ONE walker
+# in one model call; this runs the model in a LOOP with the walkers exposed as
+# tools, so it can resolve an event by description, fan out across several
+# events, and compose two walkers into one answer. "Which incidents never got
+# a postmortem?" is not a question `chat` can express at all.
+#
+# The division of labour is the whole design, and it is what keeps the 94.7%
+# quotable:
+#
+#   * The MODEL decides which tool to call and writes the closing sentence.
+#   * The WALKERS decide what is true. Every verdict, every citation and every
+#     "N records were examined" below comes out of a deterministic traversal
+#     that is unchanged from the benchmarked code path.
+#
+# So the model never decides reachability and never reads an artifact body. It
+# cannot turn a proven absence into a maybe. The worst a bad plan produces is
+# the wrong walker run against the right graph — visible in the trace, which is
+# reported back and rendered.
+
+glob MAX_TURNS: int = 5;
+
+glob TOOLS: list[dict[str, any]] = [
+    {"type": "function", "function": {
+        "name": "find_event",
+        "description": "Resolve a described event to its id. All filters optional and ANDed. Returns an empty list when nothing matches — never guess an id, always resolve it here first.",
+        "parameters": {"type": "object", "properties": {
+            "day": {"type": "integer", "description": "day 0-60, omit for any"},
+            "event_type": {"type": "string", "description": "substring match, e.g. 'incident' matches incident_opened"},
+            "actor": {"type": "string", "description": "a person involved, substring match"}
+        }}}},
+    {"type": "function", "function": {
+        "name": "gap_scan",
+        "description": "Exhaustively search the causal closure of an event for an expected follow-up. Returns a PROVEN yes or no plus the number of records examined. This is the only way to establish that something never happened.",
+        "parameters": {"type": "object", "properties": {
+            "event_id": {"type": "string"},
+            "expected": {"type": "string", "description": "e.g. postmortem_created, confluence_created, onboarding_session, zd_ticket_opened, jira_ticket_created, runbook_created"}
+        }, "required": ["event_id", "expected"]}}},
+    {"type": "function", "function": {
+        "name": "who_knows",
+        "description": "Rank people by evidence weight in a subsystem, decayed on a 30-day half-life. Returns bus factor, who has left, and who is still here.",
+        "parameters": {"type": "object", "properties": {
+            "domain": {"type": "string"}
+        }, "required": ["domain"]}}},
+    {"type": "function", "function": {
+        "name": "could_have_known",
+        "description": "Whether a person could have known about an event by a given day, by reachability over the channels and artifacts they had access to.",
+        "parameters": {"type": "object", "properties": {
+            "person": {"type": "string"},
+            "as_of_day": {"type": "integer"},
+            "event_id": {"type": "string"}
+        }, "required": ["person", "as_of_day", "event_id"]}}},
+    {"type": "function", "function": {
+        "name": "inherited",
+        "description": "Who left holding undocumented knowledge, and which subsystems left with them. Use when a question is about knowledge lost to a departure.",
+        "parameters": {"type": "object", "properties": {
+            "before_day": {"type": "integer", "description": "only departures before this day; 60 for all"}
+        }}}}
+];
+
+
+def agent_system -> str {
+    doms: str = ", ".join(known_domains());
+    return "You answer questions about an engineering organisation's 60-day history by calling tools over a knowledge graph.\n"
+        + "Rules:\n"
+        + "- NEVER invent an event id. Resolve it with find_event first.\n"
+        + "- An empty find_event means you failed to RESOLVE something. It is NOT evidence that the thing never happened, and you must never report it as one. Absence is only ever established by gap_scan.\n"
+        + "- To answer 'was X ever done after Y' (a postmortem after an incident, an onboarding after a hire, a page after a gap): find the TRIGGER event Y — the incident, the hire, the gap — then call gap_scan(event_id=Y, expected=X). Do not search for X directly.\n"
+        + "- gap_scan is the only way to claim something never happened, because it is exhaustive over the causal closure. Quote the number of records it examined.\n"
+        + "- If you cannot resolve the trigger event, say you could not resolve it. Never turn that into a 'no'.\n"
+        + "- You may call several tools in one turn to cover several events at once.\n"
+        + "- Do not state anything a tool did not return. No hedging language about what might exist.\n"
+        + "- Finish with ONE short sentence answering the question directly. No preamble, no bullet lists.\n"
+        + "Subsystems in this graph: " + doms + "\n"
+        + "Common event types: incident_opened, incident_resolved, knowledge_gap_detected, employee_hired, "
+        + "confluence_created, postmortem_created, retrospective, pr_review, jira_ticket_created, "
+        + "customer_email_routed, inbound_external_email, design_discussion, crm_touchpoint.";
+}
+
+
+# One model call. Returns the raw assistant message, or `{}` on any failure —
+# the loop treats that as "stop", never as an error to the user.
+def llm_turn(msgs: list[any]) -> dict[str, any] {
+    key: str = api_key();
+    if not key {
+        return {};
+    }
+    body: dict[str, any] = {
+        "model": KIMI_MODEL, "max_tokens": 700,
+        "messages": msgs, "tools": TOOLS
+    };
+    try {
+        req = urllib.request.Request(
+            KIMI_URL, data=json.dumps(body).encode(),
+            headers={"content-type": "application/json",
+                     "Authorization": "Bearer " + key}
+        );
+        raw = urllib.request.urlopen(req, timeout=25).read();
+        d: dict[str, any] = json.loads(raw);
+        return d["choices"][0]["message"];
+    } except Exception as e {
+        return {};
+    }
+}
+
+
+# Dispatch a tool call to a walker. Returns `{result, answer}` — `result` is
+# what the model sees, `answer` is the full walker payload the UI renders
+# (verdict, citations, and the path the canvas animates). They are deliberately
+# different: the model gets a compact summary, the user gets the evidence.
+def run_tool(name: str, args: dict[str, any]) -> dict[str, any] {
+    if name == "find_event" {
+        day: int = int(args["day"]) if "day" in args else -1;
+        et: str = str(args["event_type"]) if "event_type" in args else "";
+        who: str = str(args["actor"]) if "actor" in args else "";
+        r = root spawn EventSearch(day=day, event_type=et, actor=who, limit=12);
+        if not r.reports {
+            return {"result": {"count": 0, "events": []}, "answer": {}};
+        }
+        return {"result": r.reports[0], "answer": {}};
+    }
+    if name == "gap_scan" {
+        eid: str = str(args["event_id"]) if "event_id" in args else "";
+        exp: str = str(args["expected"]) if "expected" in args else "";
+        a: dict[str, any] = gap_answer_for(eid, exp, f"Was a {exp} produced after {eid}?");
+        return {"result": {"answer": "YES" in str(a["verdict"]),
+                           "examined": len(a["highlight"] as list),
+                           "reason": a["reason"]},
+                "answer": a};
+    }
+    if name == "who_knows" {
+        dom: str = str(args["domain"]) if "domain" in args else "";
+        a2: dict[str, any] = who_answer_for(dom);
+        if "bus" not in a2 {
+            return {"result": {"error": f"'{dom}' is not a subsystem",
+                               "known": known_domains()}, "answer": {}};
+        }
+        return {"result": {"bus_factor": a2["bus"], "doc_status": a2["doc"],
+                           "still_here_top": a2["top"],
+                           "ranking": (a2["evidence"] as list)[:8]},
+                "answer": a2};
+    }
+    if name == "could_have_known" {
+        p: str = str(args["person"]) if "person" in args else "";
+        dy: int = int(args["as_of_day"]) if "as_of_day" in args else 60;
+        ev: str = str(args["event_id"]) if "event_id" in args else "";
+        a3: dict[str, any] = visibility_answer(p, dy, ev);
+        a3["title"] = f"Could {p} have known about {ev} by day {dy}?";
+        return {"result": {"could_have_known": "YES" in str(a3["verdict"]),
+                           "reason": a3["reason"]},
+                "answer": a3};
+    }
+    if name == "inherited" {
+        bd: int = int(args["before_day"]) if "before_day" in args else 60;
+        r2 = root spawn Inherited(before_day=bd);
+        if not r2.reports {
+            return {"result": {"found": False}, "answer": {}};
+        }
+        return {"result": r2.reports[0], "answer": {}};
+    }
+    return {"result": {"error": f"no such tool '{name}'"}, "answer": {}};
+}
+
+
+# A one-line summary of what a tool did, for the trace shown in the panel.
+# Arguments rendered to one line HERE rather than in the client. Iterating a
+# dict's items on the client lowers to JS object semantics and is a needless
+# risk for something the server already holds as a plain dict.
+def arg_line(args: dict[str, any]) -> str {
+    parts: list[str] = [];
+    for (k, v) in args.items() {
+        parts.append(str(k) + "=" + str(v));
+    }
+    return ", ".join(parts);
+}
+
+
+def trace_note(name: str, res: dict[str, any]) -> str {
+    if name == "find_event" {
+        n: int = int(res["count"]) if "count" in res else 0;
+        return f"{n} event(s) matched" if n > 0 else "no event matched";
+    }
+    if name == "gap_scan" {
+        hit: bool = bool(res["answer"]) if "answer" in res else False;
+        ex: int = int(res["examined"]) if "examined" in res else 0;
+        return (f"found it — {ex} records examined" if hit
+                else f"nothing — {ex} records examined, space closed");
+    }
+    if name == "who_knows" {
+        if "error" in res {
+            return "unknown subsystem";
+        }
+        return f"bus factor {res['bus_factor']} · {res['doc_status']}";
+    }
+    if name == "could_have_known" {
+        return "reachable" if res["could_have_known"] else "not reachable";
+    }
+    if name == "inherited" {
+        return str(res["name"]) + " left holding " + ", ".join([str(x) for x in res["domains"]]) if ("name" in res and res["name"]) else "no departure found";
+    }
+    return "done";
+}
+
+
+def:pub agent(text: str) -> dict[str, any] {
+    if not api_key() {
+        # No key, no loop. The single-call parser still answers the four
+        # canned shapes, so the pane degrades instead of going dark.
+        return chat(text, "");
+    }
+
+    msgs: list[any] = [
+        {"role": "system", "content": agent_system()},
+        {"role": "user", "content": text}
+    ];
+    trace: list[dict[str, any]] = [];
+    answers: list[dict[str, any]] = [];
+    final: str = "";
+    turn: int = 0;
+
+    while turn < MAX_TURNS {
+        turn += 1;
+        m: dict[str, any] = llm_turn(msgs);
+        if not m {
+            break;
+        }
+        calls: list[any] = (m["tool_calls"] as list) if "tool_calls" in m and m["tool_calls"] else [];
+        if not calls {
+            final = str(m["content"]) if "content" in m and m["content"] else "";
+            break;
+        }
+        msgs.append(m);
+        for tc in calls {
+            fn: dict[str, any] = tc["function"];
+            name: str = str(fn["name"]);
+            args: dict[str, any] = {};
+            try {
+                args = json.loads(str(fn["arguments"]));
+            } except Exception as e {
+                args = {};
+            }
+            out: dict[str, any] = run_tool(name, args);
+            res: dict[str, any] = out["result"];
+            if out["answer"] {
+                answers.append(out["answer"]);
+            }
+            trace.append({"tool": name, "args": arg_line(args),
+                          "note": trace_note(name, res)});
+            msgs.append({"role": "tool", "tool_call_id": tc["id"],
+                         "content": json.dumps(res)});
+        }
+    }
+
+    # Union of everything the walkers lit up. Several walkers can run in one
+    # question — three gap scans over three incidents — and the canvas shows
+    # all of it as one search.
+    path: list[list[str]] = [];
+    hl: list[str] = [];
+    ev: list[str] = [];
+    for a4 in answers {
+        # Per-answer slice as well as a global cap, so a fan-out of twelve
+        # scans shows a bit of each rather than all of the first one.
+        for pair in (a4["path"] as list)[:12] {
+            if len(path) < 90 {
+                path.append([pair[0] as str, pair[1] as str]);
+            }
+        }
+        # Capped. Twelve gap scans union to 581 nodes, which paints the
+        # starburst the walk-as-a-tree work removed — a lit blob reads as
+        # "everything is relevant", which is the opposite of the claim.
+        for g in (a4["highlight"] as list)[:14] {
+            gs: str = g as str;
+            if gs not in hl and len(hl) < 140 {
+                hl.append(gs);
+            }
+        }
+        for e2 in (a4["evidence"] as list)[:6] {
+            es: str = e2 as str;
+            if es not in ev {
+                ev.append(es);
+            }
+        }
+    }
+
+    # One walker answered, so its verdict IS the answer and gets the headline.
+    # Several walkers answered, so the headline is the model's sentence and the
+    # verdicts live in the trace — no single one of them is the answer.
+    verdict: str = str(answers[0]["verdict"]) if len(answers) == 1 else "";
+    reason: str = str(answers[0]["reason"]) if len(answers) == 1 else "";
+    ctx: str = "";
+    for a5 in answers {
+        if "top" in a5 {
+            ctx = str(a5["title"]).replace("Who knows ", "").replace("?", "");
+        }
+    }
+
+    if not final and not answers {
+        final = "I could not resolve that against the graph.";
+    }
+
+    return {
+        "title": text, "verdict": verdict, "reason": reason,
+        "evidence": ev[:10], "highlight": hl, "path": path,
+        "say": final, "chips": [], "ctx_domain": ctx,
+        "route": f"{len(trace)} tool call(s) · {turn} turn(s) · {KIMI_MODEL}",
+        "trace": trace
+    };
 }
