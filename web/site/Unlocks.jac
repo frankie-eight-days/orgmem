@@ -5,6 +5,19 @@ a diagram of the traversal that answers its question, so the panel says the same
 thing as the sentence under it in a different notation.
 """
 
+#*
+Retired when the site moved to the observability framing.
+
+The three questions were posed as trivia — "was a postmortem ever written?" with
+no subject and nobody asking. They now live in `Dataset.jac`, attached to Apex
+Athletics and to specific days, which is what they were missing. The mechanism
+lines survived the move almost verbatim; it was only ever the framing that was
+weak.
+
+Commented rather than deleted: the three stills are hand-tuned SVG and their
+`.s-*` rules are still in `styles.jac`. To restore, uncomment and re-add
+`Unlocks` to `Landing.jac`.
+
 """One of the three questions no search box can answer."""
 def:pub Unlock(title: str, question: str, mechanism: str, children: any = None) -> JsxElement {
     return <article className="unlock">
@@ -67,12 +80,64 @@ def:pub Unlocks() -> JsxElement {
     </section>;
 }
 
+*#
+
+"""Four real SILENCE questions, verbatim from `data/eval_questions.jsonl`.
+
+`question_text` and `ground_truth.answer` are copied exactly — a reader can grep
+any of these strings in the dataset and find the row. The `why` column is
+orgforge's own `absence_type`, rendered readable: `state_machine_confirmed`
+means the simulator confirmed the follow-up never happened,
+`state_machine_present` means it did.
+
+Two true and two false on purpose. The whole argument for measuring SILENCE is
+that a system which always answers "no, nothing was written" looks excellent on
+the twelve noes and fails all fifteen yeses, which is why 55% is the number to
+beat rather than 0%.
+"""
+cl glob SILENCE_SAMPLES: list[dict[str, str]] = [
+    {
+        "q": "Was a Salesforce risk flag on the related deals created in response to the incident on Day 8 involving Jax, Kaitlyn?",
+        "a": "false",
+        "why": "confirmed absent"
+    },
+    {
+        "q": "Was a postmortem document created in response to the incident on Day 25 involving Deepa and Alex?",
+        "a": "true",
+        "why": "present in the record"
+    },
+    {
+        "q": "Was a Zendesk support ticket created as a result of the routing of the customer email on Day 15 involving Metro United FC, Marcus?",
+        "a": "false",
+        "why": "confirmed absent"
+    },
+    {
+        "q": "Was a Confluence documentation page created in response to the knowledge gap detected on Day 38 involving Morgan, specifically regarding kubernetes-deploy, terraform?",
+        "a": "true",
+        "why": "present in the record"
+    }
+];
+
+cl def:pub silence_samples() -> list[dict[str, str]] { return SILENCE_SAMPLES; }
+
 """Section 5 — the numbers, and what they don't cover."""
 def:pub Proof() -> JsxElement {
     return <section className="sec sec-proof">
         <h2 className="sec-h2">{"Measured, not claimed."}</h2>
 
+        {#* The result comes first now. The corpus size moved up into the
+            transformation section, where it is the point being made; repeating
+            it here spent two of four slots restating throughput when the
+            interesting number is accuracy against ground truth. *#}
         <dl className="stats">
+            <div className="stat">
+                <dt className="stat-n">{"94.7%"}</dt>
+                <dd className="stat-l">{"overall · 54 of 57 scored questions"}</dd>
+            </div>
+            <div className="stat">
+                <dt className="stat-n stat-n-accent">{"96.3%"}</dt>
+                <dd className="stat-l">{"on silence questions · 55.6% for a constant answer"}</dd>
+            </div>
             <div className="stat">
                 <dt className="stat-n">{"76,000+"}</dt>
                 <dd className="stat-l">{"typed edges"}</dd>
@@ -81,19 +146,28 @@ def:pub Proof() -> JsxElement {
                 <dt className="stat-n">{"6.4s"}</dt>
                 <dd className="stat-l">{"cold build"}</dd>
             </div>
-            <div className="stat">
-                <dt className="stat-n">{"4,966"}</dt>
-                <dd className="stat-l">{"artifacts"}</dd>
-            </div>
-            <div className="stat">
-                <dt className="stat-n">{"78"}</dt>
-                <dd className="stat-l">{"benchmark questions with ground truth"}</dd>
-            </div>
         </dl>
 
         <p className="body">
-            {"The dataset ships 27 questions where the expected follow-up never happened, near-evenly split (15 yes / 12 no) so a constant answer scores 55%."}
+            {"The dataset ships 27 SILENCE questions — did the expected follow-up ever happen — near-evenly split 15 yes / 12 no, so a constant answer scores 55%. These are four of them, verbatim from eval_questions.jsonl, with the ground truth orgforge ships alongside."}
         </p>
+
+        {#* Real questions, not paraphrases. A reader who opens the dataset can
+            grep any of these `question_text` strings and find it. The mix of
+            true and false is the point: a system that always says "no
+            postmortem" scores well on the noes and fails every yes. *#}
+        <ul className="gt-list">
+            {for (i, q) in enumerate(silence_samples()) {
+                <li className={"gt" + (" gt-no" if q["a"] == "false" else "")} key={str(i)}>
+                    <p className="gt-q">{q["q"]}</p>
+                    <p className="gt-a">
+                        <span className="gt-badge">{"ground truth"}</span>
+                        <span className="gt-val">{q["a"]}</span>
+                        <span className="gt-why">{q["why"]}</span>
+                    </p>
+                </li>
+            }}
+        </ul>
 
         <blockquote className="pull">
             <p>{"Flat retrieval scores about 55% on those — and we can tell you in advance which ones it fails."}</p>

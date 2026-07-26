@@ -19,12 +19,30 @@ present — which is the composition the sequence was designed to arrive at.
 """
 
 import from .SiteGraph { SiteGraph }
+import from .SiteCard { SiteCard }
 import from .motion { clamp01, ramp, ease_out, ease_in, quantize }
-import from .corpus { build_graph, parse_artifacts, scatter, kind_label, source_counts }
+import from .corpus { build_graph, parse_artifacts, scatter, source_counts }
 
 """Where the cards converge as they dissolve — the graph's centre of mass."""
 glob FOCUS_X: float = 48.0;
 glob FOCUS_Y: float = 44.0;
+
+"""Narrow a parsed card's fields back to concrete types.
+
+`parse_artifacts()` returns `list[dict[str, any]]` because a card mixes strings,
+nested row lists and a people list. Indexing that yields `any`, and iterating
+`any` produces a loop variable the checker cannot subscript — so `run["t"]`
+fails to compile. Routing the value through a function with a declared return
+type is what restores the element type; a JSX statement slot has nowhere to put
+a local annotation.
+"""
+cl def:pub rows_of(c: dict[str, any]) -> list[list[dict[str, any]]] {
+    return c["rows"];
+}
+
+cl def:pub card_people_of(c: dict[str, any]) -> list[str] {
+    return c["people"];
+}
 
 def:pub Transform() -> JsxElement {
     has track: Ref[HTMLDivElement] = Ref();
@@ -37,7 +55,6 @@ def:pub Transform() -> JsxElement {
     # exported globals — see the note in corpus.jac. Bind each once per render
     # so the call never lands inside a loop body.
     slots: list[dict[str, float]] = scatter();
-    kinds: dict[str, str] = kind_label();
     counts: list[str] = source_counts();
 
     """Read scroll position off the track and normalise to 0..1.
@@ -191,13 +208,15 @@ def:pub Transform() -> JsxElement {
                 <div className="tr-field">
                     {for (i, c) in enumerate(cards) {
                         <div className="slot" key={c["head"] as str} style={slot_style(i)}>
-                            <article className="card" style={card_style(i)}>
-                                <div className="card-chrome">
-                                    <span className="card-kind">{kinds[c["kind"]]}</span>
-                                    <span className="card-head">{c["head"]}</span>
-                                </div>
-                                <p className="card-meta">{c["meta"]}</p>
-                                {for (j, row) in enumerate(c["rows"]) {
+                            {#* The real source chrome, in light theme — the same
+                                per-source treatment the app's node cards use.
+                                The body rows stay here rather than moving into
+                                `SiteCard` because the parse animation needs to
+                                own the per-run spans. *#}
+                            <SiteCard kind={c["kind"] as str} head={c["head"] as str}
+                                      meta={c["meta"] as str} people={card_people_of(c)}
+                                      style={card_style(i)}>
+                                {for (j, row) in enumerate(rows_of(c)) {
                                     <p className="card-line" key={str(j)}>
                                         {for (k, run) in enumerate(row) {
                                             <span className={run_class(i, run["e"])} key={str(k)}>{run["t"]}</span>
@@ -205,7 +224,7 @@ def:pub Transform() -> JsxElement {
                                     </p>
                                 }}
                                 <span className="card-scan" style={scan_style(i)}></span>
-                            </article>
+                            </SiteCard>
                             <div className="chips" aria-hidden="true">
                                 {for (k, ent) in enumerate(c["entities"]) {
                                     <span className="chip" key={str(k)}

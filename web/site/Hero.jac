@@ -28,8 +28,13 @@ def:pub Hero() -> JsxElement {
             <div className="hero-copy">
                 <p className="wordmark">{"orgmem"}</p>
                 <h1 className="hero-h1">{"Your company knows more than it wrote down."}</h1>
+                {#* The category is named first. "Observability for
+                    organizations" does more work than any description of the
+                    mechanism: it tells a reader what shelf this sits on, and
+                    every engineer already knows what it means to be unable to
+                    see a system you are responsible for. *#}
                 <p className="hero-sub">
-                    {"orgmem maps organizational knowledge as a graph — who knows what, where it's written, and where it isn't. Built in Jac."}
+                    {"Observability for organizations. orgmem maps who knows what, where it's written, and where it isn't — as a graph you can walk. Built in Jac."}
                 </p>
                 <a className="hero-cta" href="#transformation">{"See it running ↓"}</a>
             </div>
