@@ -297,7 +297,11 @@ def gap_answer -> dict[str, any] {
         "reason": p["reason"],
         "evidence": [f"searched: {s}" for s in searched[:20]],
         "highlight": searched[:60],
-        "path": []
+        # The walk IS the argument here: the audience watches the walker
+        # exhaust the bounded causal space and come back with nothing. A
+        # verdict that appears with no visible search reads as a lookup that
+        # failed rather than as a proven absence.
+        "path": [[pair[0] as str, pair[1] as str] for pair in p["path"]]
     };
 }
 
@@ -322,7 +326,10 @@ def who_answer -> dict[str, any] {
         "reason": p["bus_factor_rule"],
         "evidence": ev,
         "highlight": [person["name"] for person in p["people"][:5]],
-        "path": []
+        # domain -> the artifact that mentions it -> the person who wrote it.
+        # Ranking is computed over the full evidence set; this is a readable
+        # sample of the route that produced it, not the whole of it.
+        "path": [[pair[0] as str, pair[1] as str] for pair in p["path"]]
     };
 }
 

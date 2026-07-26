@@ -1257,6 +1257,7 @@ walker :pub GapScan {
 
     has searched: list[str] = [];
     has found: list[str] = [];
+    has path: list[list] = [];
     has domains: list[str] = [];
     has seen: dict[str, bool] = {};
     has lo: int = 0;
@@ -1295,14 +1296,14 @@ walker :pub GapScan {
             }
             for a in [here ->:Produced:->] {
                 self.consider(a);
-                if self.admit(str(a.gid)) { visit a; }
+                if self.admit(str(a.gid), str(here.gid)) { visit a; }
             }
             return;
         }
         self.consider(here);
         for a in [here ->:Produced:->] {
             self.consider(a);
-            if self.admit(str(a.gid)) { visit a; }
+            if self.admit(str(a.gid), str(here.gid)) { visit a; }
         }
     }
 
@@ -1311,26 +1312,36 @@ walker :pub GapScan {
     can at_artifact with Artifact entry {
         for a in [here ->:Refs:->] {
             self.consider(a);
-            if self.admit(str(a.gid)) { visit a; }
+            if self.admit(str(a.gid), str(here.gid)) { visit a; }
         }
         for a in [here <-:Refs:<-] {
             self.consider(a);
-            if self.admit(str(a.gid)) { visit a; }
+            if self.admit(str(a.gid), str(here.gid)) { visit a; }
         }
         for e in [here <-:Produced:<-] {
             if e.day >= self.lo and e.day <= self.hi {
                 self.consider(e);
-                if self.admit(str(e.gid)) { visit e; }
+                if self.admit(str(e.gid), str(here.gid)) { visit e; }
             }
         }
     }
 
-    # Gate a node into the walk exactly once, under the size cap.
-    def admit(gid: str) -> bool {
+    # Gate a node into the walk exactly once, under the size cap. `src` is
+    # recorded only so the canvas can animate the search; it has no effect on
+    # `searched`, `found`, or the verdict.
+    #
+    # Animating this one matters more than it looks. The SILENCE claim is that
+    # the space is CLOSED — watching the walker exhaust a small bounded region
+    # and come back with nothing is the argument. A verdict that appears
+    # without a visible search just looks like a lookup that failed.
+    def admit(gid: str, src: str) -> bool {
         if gid in self.seen or len(self.seen) >= self.max_nodes {
             return False;
         }
         self.seen[gid] = True;
+        if len(self.path) < 200 {
+            self.path.append([src, gid]);
+        }
         return True;
     }
 
@@ -1383,7 +1394,8 @@ walker :pub GapScan {
             "searched": self.searched[:300],
             "searched_count": len(self.searched),
             "window_days": self.window_days,
-            "reason": reason
+            "reason": reason,
+            "path": self.path[:120]
         };
     }
 }
@@ -1403,6 +1415,8 @@ walker :pub WhoKnows {
     has specs: dict[str, int] = {};
     has departed: list[dict[str, any]] = [];
     has people: list[any] = [];
+    has path: list[list] = [];
+    has lit: dict[str, bool] = {};
     has bus_factor: int = 0;
     has doc_status: str = "UNDOCUMENTED";
     has ok: bool = True;
@@ -1427,9 +1441,16 @@ walker :pub WhoKnows {
                 "departed_day": p.departed_day
             });
         }
+        # Record domain -> artifact for the canvas. Capped, because TitanDB is
+        # mentioned by 214 artifacts and lighting all of them is a blob rather
+        # than a route. Scoring below is unaffected — it iterates the full set.
         for a in [here <-:Mentions:<-] {
             if a.day > self.as_of_day {
                 continue;
+            }
+            if len(self.path) < FAN_MAX {
+                self.path.append([str(here.gid), str(a.gid)]);
+                self.lit[str(a.gid)] = True;
             }
             visit a;
         }
@@ -1449,6 +1470,12 @@ walker :pub WhoKnows {
         w: float = kw * (0.5 ** (age / 30.0));
         for p in [here <-:Authored:<-] {
             pn: str = str(p.name);
+            # Second display hop: artifact -> its author. Only from artifacts
+            # that were themselves recorded, so the route stays a connected
+            # tree rooted at the domain rather than a scatter of pairs.
+            if str(here.gid) in self.lit {
+                self.path.append([str(here.gid), pn]);
+            }
             self.score[pn] = self.score.get(pn, 0.0) + w;
             self.counts[pn] = self.counts.get(pn, 0) + 1;
             if here.kind == "ConfluencePage" {
@@ -1511,7 +1538,8 @@ walker :pub WhoKnows {
             "bus_factor_rule": "still-employed people scoring >= 50% of the top contributor",
             "doc_status": status,
             "evidence_by_type": self.kinds,
-            "as_of_day": self.as_of_day
+            "as_of_day": self.as_of_day,
+            "path": self.path[:120]
         };
     }
 }
