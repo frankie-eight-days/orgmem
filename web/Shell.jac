@@ -13,6 +13,7 @@ answer, and the box is a faster way to reach them than the buttons.
 
 import from "@jac/runtime" { Link }
 import from .GraphCanvas { GraphCanvas }
+import from .card.Card { Card }
 
 glob PRESETS: list[dict[str, str]] = [
     {"key": "felix", "label": "Could Felix have known about the CRM touchpoint on day 32?"},
@@ -76,7 +77,10 @@ def label_for(key: str) -> str {
 def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
               active: list[str], walked: list[list[str]],
               hops_done: int, hops_total: int,
-              onAsk: Callable[[str], None]) -> JsxElement {
+              onAsk: Callable[[str], None],
+              card: dict[str, any] = {}, cx: float = 0.0, cy: float = 0.0,
+              onNodeClick: any = None, onOpenRef: any = None,
+              onCloseCard: any = None) -> JsxElement {
 
     has query: str = "";
 
@@ -89,6 +93,21 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
     gnodes: list = (graph["nodes"] as list) if (graph and graph["nodes"]) else [];
     glinks: list = (graph["links"] as list) if (graph and graph["links"]) else [];
     matched: str = resolve_preset(query);
+
+    # "Is a card open" is a field test, not a size: `len()` on a client-side
+    # object lowers to `.length`, which is `undefined`, so both `> 0` and `== 0`
+    # are false. `gid` rather than `kind`, because an unknown id comes back with
+    # an empty kind and still deserves a window saying so.
+    #
+    # Written as TWO steps on purpose. The obvious one-liner
+    #     card_gid: str = (card["gid"] as str) if (card and card["gid"]) else "";
+    # is WRONG here and renders an empty card on first paint: `a and b` lowers to
+    # a helper with Python semantics, which returns the empty dict `{}` — falsy
+    # to Python — and that value is then used as the raw condition of a JS
+    # ternary, where `{}` is TRUTHY. The guard inverts. Keeping the `and` out of
+    # the condition keeps both languages agreeing.
+    raw_gid: any = card["gid"] if card else "";
+    card_gid: str = (raw_gid as str) if raw_gid else "";
 
     def handle_query(e: ChangeEvent) {
         query = e.target.value;
@@ -171,7 +190,9 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
         </aside>
 
         <section style={{"flex": "1", "position": "relative"}}>
-            <GraphCanvas data={graph} active={active} walked={walked} />
+            <GraphCanvas data={graph} active={active} walked={walked}
+                         running={hops_total > 0 and hops_done < hops_total}
+                         onNodeClick={onNodeClick} />
             <div style={{"position": "absolute", "bottom": "12px", "left": "16px",
                          "fontSize": "12px", "opacity": "0.6"}}>
                 {(str(len(active)) + " of " + str(len(gnodes))
@@ -188,6 +209,11 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
                 </div>
             }}
         </section>
+
+        {if card_gid != "" {
+            <Card key={card_gid} payload={card} x={cx} y={cy}
+                  onClose={onCloseCard} docked={False} onOpenRef={onOpenRef} />
+        }}
     </div>;
 }
 

@@ -20,7 +20,7 @@ notes below are `#` comments for that reason.
 
 import os;
 import from http { HTTPMethod }
-import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand }
+import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand, NodeCard }
 
 glob HERE: str = os.path.dirname(os.path.abspath(__file__));
 
@@ -172,6 +172,68 @@ def:pub graph_data(dept: str, max_nodes: int, day_max: int,
 
 def:pub expand_node(node_id: str, hops: int) -> dict[str, any] {
     return slice_payload(root spawn Expand(node_id=node_id, hops=hops));
+}
+
+
+# Same shape as `empty_answer`: a fresh dict per call, and every key the card
+# contract names. The client reads all fifteen without checking for absence.
+def empty_card(gid: str) -> dict[str, any] {
+    return {
+        "gid": gid, "kind": "", "title": "", "body": "",
+        "day": 0, "dept": "", "subsystem": "",
+        "authors": [], "domains": [], "refs": [], "event": None,
+        "person": None, "domain": None, "event_detail": None, "dept_detail": None
+    };
+}
+
+
+# One click on the canvas, one call. `NodeCard` dispatches on the node's own
+# archetype, so the eight artifact kinds come back with artifact fields and the
+# four entity kinds come back with a detail block — never both.
+#
+# Domain is the one kind that needs two walkers. `bus_factor` and `doc_status`
+# are not stored on the node: they are the output of `WhoKnows`'s decayed
+# evidence scoring, and the card must show the SAME number the "who knows
+# TitanDB" answer shows or the demo contradicts itself on stage. So the ranking
+# is spawned here and layered onto the card rather than reimplemented.
+#
+# `as_of_day` is 60 to match `who_answer` — the corpus ends at day 60, and a
+# different cutoff would silently give the card a different bus factor.
+def:pub node_card(gid: str) -> dict[str, any] {
+    if not gid {
+        return empty_card("");
+    }
+    r = root spawn NodeCard(gid=gid);
+    if not r.reports {
+        return empty_card(gid);
+    }
+    c: dict[str, any] = r.reports[0];
+    if c["kind"] != "Domain" or not c["domain"] {
+        return c;
+    }
+    d: dict[str, any] = c["domain"];
+    wk = root spawn WhoKnows(domain=str(d["name"]), as_of_day=60, limit=8);
+    if not wk.reports {
+        return c;
+    }
+    p = wk.reports[0];
+    # WhoKnows reports {error, known} for a name it does not recognise. Every
+    # Domain node is by construction known to it, but the card degrades to the
+    # structural fields rather than raising if that ever stops being true.
+    if "bus_factor" not in p {
+        return c;
+    }
+    d["bus_factor"] = int(p["bus_factor"]);
+    d["doc_status"] = str(p["doc_status"]);
+    d["people"] = [
+        {"name": x["name"], "count": x["artifacts"], "departed": x["departed"]}
+        for x in p["people"][:8]
+    ];
+    d["departed_with"] = [
+        {"name": x["name"], "documented_pct": x["documented_pct"]}
+        for x in p["departed_with_knowledge"][:8]
+    ];
+    return c;
 }
 
 

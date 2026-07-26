@@ -1680,7 +1680,173 @@ walker :pub EvalRun {
 }
 
 
-# ---------------------------------------------------------------- 7. Stats
+# ---------------------------------------------------------------- 7. NodeCard
+
+# Every key the card contract names, present and empty. The client dots into
+# this payload without checking for absence, so a MISSING key blanks the whole
+# page while an empty one just renders an empty section.
+def blank_card(gid: str, kind: str) -> dict[str, any] {
+    return {
+        "gid": gid, "kind": kind, "title": "", "body": "",
+        "day": 0, "dept": "", "subsystem": "",
+        "authors": [], "domains": [], "refs": [], "event": None,
+        "person": None, "domain": None, "event_detail": None, "dept_detail": None
+    };
+}
+
+
+# A clickable row in the card's reference list. `title` falls back to the id so
+# a row is never blank — 1,400 artifacts carry an empty title.
+def ref_row(a: any) -> dict[str, any] {
+    return {"gid": a.gid, "kind": a.kind,
+            "title": str(a.title) if a.title else str(a.gid)};
+}
+
+
+# One node, everything the card needs to render it. The five abilities below are
+# the whole point of the archetype split: the walker arrives and the node's own
+# type decides which shape comes back, so there is no `if kind ==` ladder and no
+# way for a Person to be filled in with an artifact's fields.
+#
+# `here` is the arrived-at node and `self` is the walker — the reverse of a node
+# ability, where `here` is not bound at all.
+walker :pub NodeCard {
+    has gid: str = "";
+
+    can start with Root entry {
+        n: any = find_node(self.gid);
+        if n is None {
+            # Unknown ids reach here routinely: the canvas merges path nodes the
+            # slice never had, and a ref can point at an artifact outside the
+            # ingested set. An empty card is the answer, not an error.
+            report blank_card(self.gid, "");
+            return;
+        }
+        if (isinstance(n, Artifact) or isinstance(n, Person) or isinstance(n, Domain)
+            or isinstance(n, Event) or isinstance(n, Department)) {
+            visit n;
+            return;
+        }
+        # Channel is a real node type with no card of its own — it renders
+        # through the shell's fallback rather than crashing the dispatch.
+        other: dict[str, any] = blank_card(str(n.gid), str(n.kind));
+        other["title"] = str(n.label);
+        report other;
+    }
+
+    # Fires for all eight artifact archetypes, which is why they subclass
+    # Artifact rather than carrying a `kind` field.
+    can on_artifact with Artifact entry {
+        c: dict[str, any] = blank_card(str(here.gid), str(here.kind));
+        c["title"] = str(here.title);
+        c["body"] = str(here.body);
+        c["day"] = int(here.day);
+        c["dept"] = str(here.dept);
+        c["subsystem"] = str(here.subsystem);
+        c["authors"] = [str(p.name) for p in [here <-:Authored:<-]][:8];
+        c["domains"] = [str(d.name) for d in [here ->:Mentions:->]][:6];
+        c["refs"] = [ref_row(a) for a in [here ->:Refs:->]][:8];
+        # The event that produced this artifact, if the simulation recorded one.
+        # At most one in the corpus, so the first is the only.
+        for e in [here <-:Produced:<-] {
+            c["event"] = {"gid": str(e.gid), "event_type": str(e.event_type),
+                          "day": int(e.day)};
+            break;
+        }
+        report c;
+    }
+
+    can on_person with Person entry {
+        c: dict[str, any] = blank_card(str(here.gid), "Person");
+        c["title"] = str(here.name);
+        c["dept"] = str(here.dept);
+        # What someone knows is not stored anywhere — it is derived by walking
+        # their authored artifacts and tallying what those artifacts mention.
+        tally: dict[str, int] = {};
+        n_auth: int = 0;
+        for a in [here ->:Authored:->] {
+            n_auth += 1;
+            for d in [a ->:Mentions:->] {
+                tally[str(d.name)] = tally.get(str(d.name), 0) + 1;
+            }
+        }
+        ranked: list[any] = [];
+        for (nm, ct) in tally.items() {
+            ranked.append((ct, nm));
+        }
+        ranked.sort(reverse=True);
+        c["person"] = {
+            "name": str(here.name), "dept": str(here.dept), "role": str(here.role),
+            "joined_day": int(here.joined_day),
+            "departed_day": int(here.departed_day),
+            "documented_pct": float(here.documented_pct),
+            "authored_count": n_auth,
+            "top_domains": [{"name": str(r[1]), "count": int(r[0])}
+                            for r in ranked[:8]],
+            "departed_domains": [str(d.name) for d in [here ->:DepartedWith:->]]
+        };
+        report c;
+    }
+
+    # `bus_factor`, `doc_status` and the ranked people are NOT computed here —
+    # `WhoKnows` already owns that scoring, and `api.jac` layers its report on
+    # top of this one so there is exactly one definition of a bus factor.
+    can on_domain with Domain entry {
+        c: dict[str, any] = blank_card(str(here.gid), "Domain");
+        c["title"] = str(here.name);
+        c["domain"] = {
+            "name": str(here.name),
+            "aliases": [str(x) for x in here.aliases],
+            "is_genesis_gap": bool(here.is_genesis_gap),
+            "artifact_count": len([here <-:Mentions:<-]),
+            "doc_status": "", "bus_factor": 0, "people": [],
+            "departed_with": [
+                {"name": str(p.name), "documented_pct": p.documented_pct}
+                for p in [here <-:DepartedWith:<-]
+            ][:8]
+        };
+        report c;
+    }
+
+    can on_event with Event entry {
+        c: dict[str, any] = blank_card(str(here.gid), "Event");
+        c["title"] = str(here.event_type);
+        c["day"] = int(here.day);
+        c["event_detail"] = {
+            "event_id": str(here.event_id), "event_type": str(here.event_type),
+            "day": int(here.day), "is_incident": bool(here.is_incident),
+            # The document slots the simulation opened and never filled. This
+            # list is the silence, stated by the corpus in its own hand.
+            "unfulfilled": [str(x) for x in here.unfulfilled],
+            "involves": [str(p.name) for p in [here ->:Involves:->]][:8],
+            "produced": [ref_row(a) for a in [here ->:Produced:->]][:8]
+        };
+        report c;
+    }
+
+    can on_dept with Department entry {
+        c: dict[str, any] = blank_card(str(here.gid), "Department");
+        c["title"] = str(here.name);
+        c["dept"] = str(here.name);
+        members: list[str] = [str(p.name) for p in [here <-:MemberOf:<-]];
+        # Artifacts carry their department as a string, not an edge — counting
+        # them means a scan of the artifact table rather than a traversal.
+        n_art: int = 0;
+        for (aid, a) in ARTS.items() {
+            if a.dept == here.name {
+                n_art += 1;
+            }
+        }
+        c["dept_detail"] = {
+            "name": str(here.name), "member_count": len(members),
+            "members": members[:8], "artifact_count": n_art
+        };
+        report c;
+    }
+}
+
+
+# ---------------------------------------------------------------- 8. Stats
 
 walker :pub Stats {
     can start with Root entry { visit HUB; }

@@ -428,7 +428,7 @@ def:pub Card(payload: dict[str, any], x: float = 0.0, y: float = 0.0,
                  style={{"position": "fixed", "top": "0", "left": "0",
                          "right": "0", "bottom": "0", "zIndex": "60"}} />
         }}
-        <div ref={boxRef} tabIndex={-1} onKeyDown={handle_key} style={shell}>
+        <div key="window" ref={boxRef} tabIndex={-1} onKeyDown={handle_key} style={shell}>
             <div style={{"height": "3px", "flexShrink": "0", "background": accent}} />
 
             {if not docked {

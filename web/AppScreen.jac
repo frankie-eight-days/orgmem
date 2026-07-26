@@ -35,7 +35,7 @@ walker while the audience is trying to follow a token across it.
 """
 
 import from react { useEffect }
-sv import from ..api { graph_data, ask }
+sv import from ..api { graph_data, ask, node_card }
 import from .Shell { Shell }
 
 glob HOP_MS: int = 380;
@@ -179,6 +179,13 @@ def:pub AppScreen -> JsxElement {
     has loading: bool = False;
     has attempt: int = 0;
 
+    # The open node card and the point it is anchored to. `{}` rather than None
+    # so `Shell` never dots into a null; emptiness is tested on `gid`, because
+    # `{}` is truthy in JS and `len()` on a client-side object is undefined.
+    has card: dict[str, any] = {};
+    has cx: float = 0.0;
+    has cy: float = 0.0;
+
     # Casting to the concrete element types matters: `answer` is dict[str, any],
     # and a bare `list` leaves `pair` as `any`, which is not iterable (E1022).
     path: list[list[str]] = answer["path"] as list[list[str]];
@@ -204,6 +211,28 @@ def:pub AppScreen -> JsxElement {
         busy = True;
         answer = await ask(preset);
         busy = False;
+    }
+
+    # Clicking a dot opens the artifact it stands for. The anchor is set before
+    # the await so the card lands where the click was, not where the pointer
+    # drifted to while the round-trip was in flight.
+    async def open_card(gid: str, x: float, y: float) {
+        cx = x;
+        cy = y;
+        fetched: dict[str, any] = await node_card(gid);
+        card = fetched if fetched else {};
+    }
+
+    # A reference row inside an open card opens the artifact it points at, in
+    # place. The anchor is deliberately left alone so the window does not jump
+    # out from under the cursor that just clicked inside it.
+    async def open_ref(gid: str) {
+        fetched: dict[str, any] = await node_card(gid);
+        card = fetched if fetched else {};
+    }
+
+    def close_card {
+        card = {};
     }
 
     async def set_cap(n: int) {
@@ -300,7 +329,10 @@ def:pub AppScreen -> JsxElement {
         <Shell answer={answer} busy={busy} graph={view}
                active={active} walked={walked}
                hops_done={step} hops_total={len(path)}
-               onAsk={run_preset} />
+               onAsk={run_preset}
+               card={card} cx={cx} cy={cy}
+               onNodeClick={open_card} onOpenRef={open_ref}
+               onCloseCard={close_card} />
         <div style={{"position": "fixed", "top": "16px", "left": "424px",
                      "display": "flex", "alignItems": "center", "gap": "8px",
                      "padding": "6px 10px", "borderRadius": "8px",

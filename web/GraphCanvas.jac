@@ -65,7 +65,8 @@ def end_id(v: any) -> str {
 }
 
 def:pub GraphCanvas(data: dict[str, any], active: list[str],
-                    walked: list[list[str]]) -> JsxElement {
+                    walked: list[list[str]], running: bool = False,
+                    onNodeClick: any = None) -> JsxElement {
     has boxRef: Ref[HTMLDivElement] = Ref();
     has fgRef: Ref[any] = Ref();
     has w: int = 0;
@@ -140,6 +141,21 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
         return WALK_COLOR;
     }
 
+    # force-graph hands the click handler (node, event) — the node is the datum
+    # the simulation is holding, so its `id` is the gid, and the event is a real
+    # DOM MouseEvent whose viewport coordinates are where the card anchors.
+    # Flattened to (gid, x, y) here so nothing above this file has to know that
+    # the canvas is a force-graph.
+    def handle_node_click(n: any, ev: any) {
+        if not onNodeClick {
+            return;
+        }
+        if not n {
+            return;
+        }
+        onNodeClick(n["id"] as str, (ev.clientX as float), (ev.clientY as float));
+    }
+
     def node_color(n: any) -> str {
         if (n["id"] as str) in lit {
             return WALK_COLOR;
@@ -212,6 +228,7 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
                 nodeColor={node_color}
                 nodeVal={node_size}
                 nodeRelSize={3}
+                onNodeClick={handle_node_click}
                 nodeCanvasObject={draw_label}
                 nodeCanvasObjectMode="after"
                 linkColor={link_color}
