@@ -1,9 +1,7 @@
+__pycache__/
+.DS_Store
 .env
 .jac/
-__pycache__/
 *.pyc
-data/*.parquet
-data/sim_snapshot.json
-.DS_Store
 web/kernel.js
 web/styles.css
