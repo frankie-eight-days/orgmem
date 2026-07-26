@@ -49,10 +49,15 @@ glob BLANK: dict[str, any] = {"title": "", "verdict": "", "reason": "",
 
 glob EMPTY_GRAPH: dict[str, any] = {"nodes": [], "links": [], "counts": {}};
 
-# Measured on this machine against the live server. 400 is the safe default;
-# 3k is where every Visibility path is fully present in the slice, so the walk
-# threads through real structure instead of hanging off it (see the audit in
-# the team notes: at 400, Felix had 9 of 121 path nodes on screen; at 3k, 121).
+# Measured on this machine against the live server. 3k is the demo default:
+# it is enough graph for the walk to read as a route THROUGH structure rather
+# than a figure floating on a sparse field.
+#
+# The old note here said 400 was the safe default because a Visibility path
+# was 121 nodes and only 9 of them landed in a 400-node slice. That stopped
+# being true when the walker started recording a bounded tree instead of the
+# whole cone — Felix is now 31 nodes, and every one is present at 400 as well.
+# 3k is now a composition choice, not a correctness one. 5k remains untested.
 glob CAPS: list[dict[str, any]] = [
     {"n": 400, "label": "400"},
     {"n": 1000, "label": "1k"},
@@ -175,7 +180,7 @@ def:pub AppScreen -> JsxElement {
     has step: int = 0;
     has graph: dict[str, any] = EMPTY_GRAPH;
     has view: dict[str, any] = EMPTY_GRAPH;
-    has cap: int = 400;
+    has cap: int = 3000;
     has loading: bool = False;
     has attempt: int = 0;
 
