@@ -744,6 +744,150 @@ body {
   color: var(--ink);
 }
 
+/* ---------- 7 · the walker, running ---------- */
+
+/* Code and stage side by side, code slightly wider — it is the thing being
+   read; the graph is the thing being glanced at to confirm what was read. */
+.wd {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  align-items: start;
+  margin: clamp(2rem, 5vh, 3rem) 0 0;
+}
+
+.wd-code {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  border-radius: 5px;
+  padding: 1.125rem 0;
+  overflow-x: auto;
+}
+
+.wd-pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  tab-size: 4;
+}
+
+.wd-pre code { font: inherit; white-space: pre; }
+
+/* Each line is a block so the active-line wash spans the full width rather
+   than only the glyphs. */
+.wd-line {
+  display: block;
+  padding: 0 1.25rem;
+  border-left: 2px solid transparent;
+  margin-left: -2px;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+.wd-line-on {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-left-color: var(--accent);
+}
+
+/* Five token classes, which is all Jac needs here. Edge references get their
+   own colour because `->:Produced:->` is the construct this section exists to
+   explain — colouring it like punctuation would bury the point. */
+.tok-k { color: #9B2C7F; }
+.tok-t { color: #1F5FBF; }
+.tok-s { color: #2F7A4E; }
+.tok-c { color: var(--faint); font-style: italic; }
+.tok-e { color: var(--accent); font-weight: 600; }
+
+.wd-stage {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 1rem 1rem 1.125rem;
+}
+
+.wd-svg { display: block; width: 100%; height: auto; }
+
+.wd-bound {
+  fill: none;
+  stroke: var(--rule-lit);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.wd-bound-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  fill: var(--faint);
+}
+
+.wd-edge {
+  stroke: var(--rule-lit);
+  stroke-width: 1.25;
+  transition: stroke 260ms ease, stroke-width 260ms ease;
+}
+
+.wd-edge-on { stroke: var(--muted); }
+.wd-edge-live { stroke: var(--accent); stroke-width: 2; }
+
+.wd-node circle {
+  fill: var(--bg);
+  stroke: var(--rule-lit);
+  stroke-width: 1.5;
+  transition: fill 260ms ease, stroke 260ms ease;
+}
+
+.wd-node-on circle { fill: var(--muted); stroke: var(--muted); }
+.wd-node-trigger circle { stroke: var(--accent); }
+.wd-node-trigger.wd-node-on circle { fill: var(--accent); stroke: var(--accent); }
+
+.wd-label,
+.wd-sub {
+  font-family: var(--mono);
+  text-anchor: middle;
+  transition: fill 260ms ease;
+}
+
+.wd-label { font-size: 10px; fill: var(--ink); }
+.wd-sub { font-size: 8.5px; fill: var(--faint); }
+.wd-node-on .wd-sub { fill: var(--muted); }
+
+.wd-read {
+  margin-top: 0.75rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* Fixed height so the counters do not jump as the note text changes length. */
+.wd-note {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+  min-height: 2.4em;
+}
+
+.wd-counts { display: flex; gap: 1.75rem; margin: 0; }
+.wd-count dt {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.wd-count dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.375rem;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.wd-count-zero dd { color: var(--accent); }
+
 /* ---------- 7 · the way in ---------- */
 
 .sec-cta { text-align: center; }
@@ -1373,6 +1517,7 @@ body {
   .schema-lists { grid-template-columns: minmax(0, 1fr); }
   .q-list { grid-template-columns: minmax(0, 1fr); }
   .vs { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; }
+  .wd { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
   .scale { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
   .ev-k { min-width: 7rem; }
 

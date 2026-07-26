@@ -14,7 +14,8 @@ import from .Hero { Hero }
 import from .Problem { Problem }
 import from .Transform { Transform }
 import from .Schema { Schema }
-import from .Mechanism { Mechanism, Cta }
+import from .Mechanism { Cta }
+import from .WalkerDemo { WalkerDemo }
 import from .Dataset { Dataset, Questions }
 import from .Unlocks { Proof }
 import from .styles { SITE_CSS }
@@ -99,7 +100,7 @@ def:pub Landing() -> JsxElement {
     #   Questions    so here is what you would want to ask, and cannot
     #   Transform    this is what we build from the records
     #   Schema       these are the node and edge types
-    #   Mechanism    this is the walker that answers
+    #   WalkerDemo   this is the walker that answers, running
     #   Proof        this is how it scores, including what it declines
     #   Cta          the way in
     #
@@ -112,7 +113,7 @@ def:pub Landing() -> JsxElement {
         <Questions />
         <Transform />
         <Schema />
-        <Mechanism />
+        <WalkerDemo />
         <Proof />
         <Cta />
     </main>;
