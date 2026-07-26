@@ -41,7 +41,11 @@ def:pub Schema() -> JsxElement {
         <h2 className="sec-h2">{"The arrows have names."}</h2>
 
         <p className="body">
-            {"A vector index stores one kind of thing and one kind of relationship: this chunk is near that chunk. The graph stores twelve node types and thirteen edge types, and the name on the edge is what lets a walker ask a specific question instead of a similar one."}
+            {#* "Twelve node types" was wrong — counted from the archetype
+                declarations it is thirteen instantiable ones: five entity types
+                plus eight artifact subtypes. Seventeen `node` declarations in
+                total, but two are abstract bases and two are infrastructure. *#}
+            {"A vector index stores one kind of thing and one kind of relationship: this chunk is near that chunk. The graph stores thirteen node types and thirteen edge types, and the name on the edge is what lets a walker ask a specific question instead of a similar one."}
         </p>
 
         <figure className="schema-fig">
