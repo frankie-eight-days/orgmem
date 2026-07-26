@@ -105,7 +105,7 @@ def:pub Problem() -> JsxElement {
     edges: list[dict[str, any]] = extracted();
 
     return <section className="sec sec-problem" id="problem">
-        <h2 className="sec-h2">{"Your stack indexes what was written. Not what happened."}</h2>
+        <h2 className="sec-h2">{"Even the most advanced search indexes the artifact. Not the structure around it."}</h2>
 
         <p className="body">
             {"Day 53. Jax posts one message in #digital-hq. Every retrieval system you have will store it, embed it, and hand it back when someone searches for kafka latency — as one chunk of text, related to other chunks of text. Here is what orgmem reads out of the same message instead."}
