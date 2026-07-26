@@ -838,7 +838,7 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
 # the wrong walker run against the right graph — visible in the trace, which is
 # reported back and rendered.
 
-glob MAX_TURNS: int = 5;
+glob MAX_TURNS: int = 6;
 
 glob TOOLS: list[dict[str, any]] = [
     {"type": "function", "function": {
@@ -871,6 +871,19 @@ glob TOOLS: list[dict[str, any]] = [
             "event_id": {"type": "string"}
         }, "required": ["person", "as_of_day", "event_id"]}}},
     {"type": "function", "function": {
+        "name": "describe_node",
+        "description": "Structural facts about any node: its kind, day, authors, the domains it mentions, and what it references. Returns METADATA ONLY — never the text of an artifact, which this system deliberately cannot give you.",
+        "parameters": {"type": "object", "properties": {
+            "gid": {"type": "string", "description": "a node id from any other tool's output"}
+        }, "required": ["gid"]}}},
+    {"type": "function", "function": {
+        "name": "neighbors",
+        "description": "The nodes directly connected to a node, with the edge type on each link. Use to explore outward from something a previous tool returned.",
+        "parameters": {"type": "object", "properties": {
+            "gid": {"type": "string"},
+            "hops": {"type": "integer", "description": "1 or 2; default 1"}
+        }, "required": ["gid"]}}},
+    {"type": "function", "function": {
         "name": "inherited",
         "description": "Who left holding undocumented knowledge, and which subsystems left with them. Use when a question is about knowledge lost to a departure.",
         "parameters": {"type": "object", "properties": {
@@ -901,15 +914,17 @@ def agent_system -> str {
 
 # One model call. Returns the raw assistant message, or `{}` on any failure —
 # the loop treats that as "stop", never as an error to the user.
-def llm_turn(msgs: list[any]) -> dict[str, any] {
+def llm_turn(msgs: list[any], use_tools: bool = True) -> dict[str, any] {
     key: str = api_key();
     if not key {
         return {};
     }
     body: dict[str, any] = {
-        "model": KIMI_MODEL, "max_tokens": 700,
-        "messages": msgs, "tools": TOOLS
+        "model": KIMI_MODEL, "max_tokens": 1200, "messages": msgs
     };
+    if use_tools {
+        body["tools"] = TOOLS;
+    }
     try {
         req = urllib.request.Request(
             KIMI_URL, data=json.dumps(body).encode(),
@@ -971,6 +986,38 @@ def run_tool(name: str, args: dict[str, any]) -> dict[str, any] {
                            "reason": a3["reason"]},
                 "answer": a3};
     }
+    if name == "describe_node" {
+        gid: str = str(args["gid"]) if "gid" in args else "";
+        c: dict[str, any] = node_card(gid);
+        # `body` is REMOVED, not truncated. The claim this project makes is
+        # that the model cannot invent a fact because it never reads the
+        # corpus; handing it artifact prose here would quietly retire that
+        # claim in exchange for slightly better narration. Metadata is enough
+        # to navigate by, and navigation is the model's whole job.
+        return {"result": {
+            "gid": c["gid"], "kind": c["kind"], "title": c["title"],
+            "day": c["day"], "dept": c["dept"], "subsystem": c["subsystem"],
+            "authors": c["authors"], "domains": c["domains"],
+            "references": (c["refs"] as list)[:10],
+            "note": "metadata only — this system does not expose artifact text to the model"
+        }, "answer": {}};
+    }
+    if name == "neighbors" {
+        gid2: str = str(args["gid"]) if "gid" in args else "";
+        hp: int = int(args["hops"]) if "hops" in args else 1;
+        if hp > 2 {
+            hp = 2;
+        }
+        sl: dict[str, any] = expand_node(gid2, hp);
+        nodes: list = (sl["nodes"] as list)[:25];
+        links: list = (sl["links"] as list)[:40];
+        return {"result": {
+            "count": len(sl["nodes"] as list),
+            "nodes": [{"id": n["id"], "type": n["type"]} for n in nodes],
+            "edges": [{"from": l["source"], "type": l["type"], "to": l["target"]}
+                      for l in links]
+        }, "answer": {}};
+    }
     if name == "inherited" {
         bd: int = int(args["before_day"]) if "before_day" in args else 60;
         r2 = root spawn Inherited(before_day=bd);
@@ -1015,6 +1062,12 @@ def trace_note(name: str, res: dict[str, any]) -> str {
     }
     if name == "could_have_known" {
         return "reachable" if res["could_have_known"] else "not reachable";
+    }
+    if name == "describe_node" {
+        return (str(res["kind"]) + " · " + str(res["title"])[:40]) if res["kind"] else "unknown node";
+    }
+    if name == "neighbors" {
+        return str(res["count"]) + " neighbour(s)";
     }
     if name == "inherited" {
         return str(res["name"]) + " left holding " + ", ".join([str(x) for x in res["domains"]]) if ("name" in res and res["name"]) else "no departure found";
@@ -1144,7 +1197,8 @@ def:pub agent(text: str) -> dict[str, any] {
 def:pub agent_step(text: str, state: str) -> dict[str, any] {
     if not api_key() {
         one: dict[str, any] = chat(text, "");
-        return {"done": True, "state": "", "steps": [], "answer": one};
+        return {"done": True, "state": "", "steps": [], "answer": one,
+                "turn": 1, "max_turns": 1};
     }
 
     msgs: list[any] = [];
@@ -1174,11 +1228,28 @@ def:pub agent_step(text: str, state: str) -> dict[str, any] {
     # last step, so assemble the same payload `agent` would have returned.
     if not calls or turn >= MAX_TURNS {
         final: str = str(m["content"]) if (m and "content" in m and m["content"]) else "";
+        # Out of turns mid-exploration. The model has results in hand but was
+        # about to reach for another tool, so asking it again WITH tools just
+        # burns the budget again. One tool-less turn forces it to answer from
+        # what it already has — which beats discarding real findings and
+        # printing "I could not resolve that", as it did when asked what was
+        # connected to TitanDB after four useful calls.
+        # Guarded on `final` alone. The earlier `len(msgs) > 2` check meant a
+        # first turn that produced neither a tool call nor content — which
+        # happens when reasoning eats the whole token budget — fell straight
+        # through to "I could not resolve that", with nothing even attempted.
+        if not final {
+            msgs.append({"role": "user",
+                         "content": "Stop searching. Answer now, in one or two short sentences, using only what the tools above already returned. If they were not enough, say exactly what is still unresolved."});
+            m2: dict[str, any] = llm_turn(msgs, False);
+            final = str(m2["content"]) if (m2 and "content" in m2 and m2["content"]) else "";
+        }
         if not final and not answers {
             final = "I could not resolve that against the graph.";
         }
         return {"done": True, "state": "", "steps": [],
-                "answer": assemble(text, answers, final, turn)};
+                "answer": assemble(text, answers, final, turn),
+                "turn": turn, "max_turns": MAX_TURNS};
     }
 
     msgs.append(m);
@@ -1206,7 +1277,9 @@ def:pub agent_step(text: str, state: str) -> dict[str, any] {
         "done": False,
         "state": json.dumps({"msgs": msgs, "answers": answers, "turn": turn}),
         "steps": steps,
-        "answer": {}
+        "answer": {},
+        "turn": turn,
+        "max_turns": MAX_TURNS
     };
 }
 

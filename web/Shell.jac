@@ -52,7 +52,7 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
               active: list[str], walked: list[list[str]],
               hops_done: int, hops_total: int,
               thread: list, onSend: Callable[[str], None],
-              live: dict[str, any] = {},
+              live: dict[str, any] = {}, turnAt: int = 0, turnMax: int = 0,
               card: dict[str, any] = {}, cx: float = 0.0, cy: float = 0.0,
               onNodeClick: any = None, onOpenRef: any = None,
               onCloseCard: any = None) -> JsxElement {
@@ -142,9 +142,18 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
 
                 {if busy {
                     <p style={{"fontSize": "12px", "opacity": "0.6",
-                               "margin": "8px 0"}}>
-                        {"walking the graph…" if live_steps > 0
-                         else "reading the question…"}
+                               "margin": "8px 0",
+                               "display": "flex", "gap": "8px"}}>
+                        <span>
+                            {"walking the graph…" if live_steps > 0
+                             else "reading the question…"}
+                        </span>
+                        {if turnMax > 0 {
+                            <span style={{"fontFamily": "ui-monospace, monospace",
+                                          "opacity": "0.7", "color": "#7fb2ff"}}>
+                                {"turn " + str(turnAt) + " / " + str(turnMax)}
+                            </span>
+                        }}
                     </p>
                 }}
 

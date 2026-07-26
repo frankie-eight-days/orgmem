@@ -41,6 +41,13 @@ import from .GraphCanvas { SpeedButton }
 
 glob HOP_MS: int = 380;
 
+# Mirrors MAX_TURNS in api.jac. Held here rather than read off the response:
+# the dev server pins a function's response shape at registration, so keys
+# added to `agent_step`'s return later in the session never reach the client —
+# they are present in the source and absent on the wire. The client already
+# knows which iteration it is on, so it does not need to be told.
+glob AGENT_TURNS: int = 6;
+
 # Ticks the reveal is spread over, so the walk lasts FRAMES * HOP_MS (~6s)
 # whether the walker crossed four edges or a hundred and twenty.
 glob FRAMES: int = 16;
@@ -246,6 +253,12 @@ def:pub AppScreen -> JsxElement {
     # message is appended.
     has live: dict[str, any] = {};
 
+    # Which turn of the loop is in flight, and the ceiling. Shown while it
+    # runs so a long question reads as bounded work rather than a hang — the
+    # agent has a hard turn budget and the panel should say so.
+    has turn_at: int = 0;
+    has turn_max: int = 0;
+
     # Playback speed for the walk, as a multiplier on HOP_MS. Changing it
     # restarts the reveal from step 0 — the interval is keyed on it — which is
     # the behaviour you want on stage: pick a pace, replay the walk at it.
@@ -301,35 +314,52 @@ def:pub AppScreen -> JsxElement {
         # thread until the final answer replaces it.
         live = {"role": "bot", "text": "", "verdict": "", "reason": "",
                 "evidence": [], "route": "", "chips": [], "trace": []};
-        state: str = "";
-        a: dict[str, any] = {};
-        hop: int = 0;
-        while hop < 8 {
-            hop = hop + 1;
+        # Loop state lives in one-element lists, NOT in typed locals. A typed
+        # local compiles to `const`, so `state = …` on the second pass throws
+        # "assign to readonly property", the loop dies inside the async
+        # function, and `busy` is never cleared — the pane hangs on the spinner
+        # with no error anywhere. Mutating a list's contents is safe where
+        # rebinding a binding is not.
+        carry: list[str] = [""];
+        got: list[any] = [{}];
+        seen: list[any] = [[]];
+        hops: list[int] = [0];
+        while hops[0] < 8 {
+            hops[0] = hops[0] + 1;
+            # Declared INSIDE the loop so each pass gets a fresh binding, and
+            # named `state` because the RPC turns the caller's variable names
+            # into the JSON keys.
+            state: str = carry[0];
             r: dict[str, any] = await agent_step(text, state);
             if not r {
                 break;
             }
+            turn_at = hops[0];
+            turn_max = AGENT_TURNS;
             new_steps: list = (r["steps"] as list) if r["steps"] else [];
             if len(new_steps) > 0 {
+                seen[0] = (seen[0] as list) + new_steps;
                 live = {"role": "bot", "text": "", "verdict": "", "reason": "",
                         "evidence": [], "route": "", "chips": [],
-                        "trace": (live["trace"] as list) + new_steps};
+                        "trace": seen[0]};
             }
             if r["done"] {
-                a = r["answer"] as dict[str, any];
+                got[0] = r["answer"];
                 break;
             }
-            state = r["state"] as str;
+            carry[0] = r["state"] as str;
         }
+        a: dict[str, any] = got[0];
         if not a {
             live = {};
             busy = False;
             return;
         }
         # The finished bubble carries the whole trace the live one accumulated.
-        a["trace"] = live["trace"] if live["trace"] else [];
+        a["trace"] = seen[0];
         live = {};
+        turn_at = 0;
+        turn_max = 0;
         answer = a;
         ctx = (a["ctx_domain"] as str) if a["ctx_domain"] else ctx;
         # Parked, not appended. Setting `answer` above starts the walk; the
@@ -498,6 +528,7 @@ def:pub AppScreen -> JsxElement {
                active={active} walked={walked}
                hops_done={step} hops_total={len(path)}
                thread={thread} onSend={send} live={live}
+               turnAt={turn_at} turnMax={turn_max}
                card={card} cx={cx} cy={cy}
                onNodeClick={open_card} onOpenRef={open_ref}
                onCloseCard={close_card} />
