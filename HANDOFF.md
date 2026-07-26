@@ -77,7 +77,19 @@ refuse connections and truncated the log mid-check.
 15. **Adding a parameter to a walker method must be done in ONE edit with every call site**, or the
     hook rejects the intermediate state and you cannot proceed. Write the method and all callers
     together.
-16. **Returning a new `graphData` object re-heats the whole force simulation.** This is the single
+16. **`pkill -f "jac dev … -p 8903"` does NOT kill the API server.** `jac dev`
+    forks a second process listening on **8904**; the pattern does not match it,
+    so it survives and keeps serving the OLD server code while the client
+    rebuilds cleanly. Symptom: an edit to a `def:pub` is present in the source,
+    `jac check` passes, the page reloads fine, and the endpoint still returns
+    the previous shape. Kill it explicitly:
+    `for p in $(lsof -nP -tiTCP:8904 -sTCP:LISTEN); do kill -9 $p; done`
+17. **The dev server pins a `def:pub`'s response shape at registration.** Keys
+    added to a returned dict later in the session are dropped on the wire —
+    present in the source, absent in the JSON, no error. Verified: `agent_step`
+    returns six keys, the client receives four. A full restart is the only fix,
+    and if a value can be derived client-side, derive it there instead.
+18. **Returning a new `graphData` object re-heats the whole force simulation.** This is the single
     biggest perf lever in the app — see the note below.
 
 ---
