@@ -21,8 +21,9 @@ import from .card.Card { Card }
 # Prefilled questions. Each one is sent as literal text through `chat`, so the
 # demo is exercising the parser rather than bypassing it.
 glob CHIPS: list[str] = [
+    "What tools do you have access to on the graph?",
+    "Which incidents never got a postmortem?",
     "Was Janice ever given an onboarding session?",
-    "Did we ever do the postmortem for the day-25 incident?",
     "Could Felix have known about the CRM touchpoint on day 32?",
     "Who knows TitanDB?"
 ];

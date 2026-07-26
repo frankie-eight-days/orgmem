@@ -891,6 +891,7 @@ def agent_system -> str {
         + "- You may call several tools in one turn to cover several events at once.\n"
         + "- Do not state anything a tool did not return. No hedging language about what might exist.\n"
         + "- Finish with ONE short sentence answering the question directly. No preamble, no bullet lists.\n"
+        + "- EXCEPTION: if asked what you can do or which tools you have, call nothing. List the five tools, one short line each, and close by saying that you choose which tool to call but the walkers decide what is true — you cannot see an artifact's contents and cannot turn a proven absence into a maybe.\n"
         + "Subsystems in this graph: " + doms + "\n"
         + "Common event types: incident_opened, incident_resolved, knowledge_gap_detected, employee_hired, "
         + "confluence_created, postmortem_created, retrospective, pr_review, jira_ticket_created, "
