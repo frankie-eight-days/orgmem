@@ -37,6 +37,7 @@ walker while the audience is trying to follow a token across it.
 import from react { useEffect }
 sv import from ..api { graph_data, ask, node_card }
 import from .Shell { Shell }
+import from .GraphCanvas { SpeedButton }
 
 glob HOP_MS: int = 380;
 
@@ -179,6 +180,11 @@ def:pub AppScreen -> JsxElement {
     has loading: bool = False;
     has attempt: int = 0;
 
+    # Playback speed for the walk, as a multiplier on HOP_MS. Changing it
+    # restarts the reveal from step 0 — the interval is keyed on it — which is
+    # the behaviour you want on stage: pick a pace, replay the walk at it.
+    has speed: float = 1.0;
+
     # The open node card and the point it is anchored to. `{}` rather than None
     # so `Shell` never dots into a null; emptiness is tested on `gid`, because
     # `{}` is truthy in JS and `len()` on a client-side object is undefined.
@@ -318,9 +324,13 @@ def:pub AppScreen -> JsxElement {
             if counter[0] * chunk >= total {
                 clearInterval(handles[0]);
             }
-        }, HOP_MS);
+        }, HOP_MS / speed);
         return lambda { clearInterval(handles[0]); };
-    }, [answer]);
+    }, [answer, speed]);
+
+    def set_speed(m: float) {
+        speed = m;
+    }
 
     vnodes: list = (view["nodes"] as list) if (view and view["nodes"]) else [];
     vlinks: list = (view["links"] as list) if (view and view["links"]) else [];
@@ -344,6 +354,11 @@ def:pub AppScreen -> JsxElement {
                 <CapButton key={c["label"] as str} n={c["n"] as int}
                            label={c["label"] as str} current={cap} onPick={set_cap} />
             }}
+            <span style={{"opacity": "0.5", "paddingLeft": "6px"}}>{"walk"}</span>
+            <SpeedButton mult={0.5} label="0.5x" current={speed} onPick={set_speed} />
+            <SpeedButton mult={1.0} label="1x" current={speed} onPick={set_speed} />
+            <SpeedButton mult={2.0} label="2x" current={speed} onPick={set_speed} />
+            <SpeedButton mult={4.0} label="4x" current={speed} onPick={set_speed} />
             <span style={{"opacity": "0.6"}}>
                 {"loading…" if loading
                  else (str(len(vnodes)) + " nodes · " + str(len(vlinks)) + " edges")}
