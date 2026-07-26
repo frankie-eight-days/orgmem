@@ -1010,10 +1010,49 @@ def:pub GraphCanvas(data: dict[str, any], active: list[str],
                 }}
             </div>
         }}
+        {#* An empty canvas at boot is loading, not failure. The old copy read as
+            an error state — it is the sentence a page shows when a fetch came
+            back empty — and it was the first thing anyone saw, for the several
+            seconds the server spends building 76,787 edges before it can
+            answer.
+
+            NOTE the comment syntax. This position is JSX *children*, so a `#`
+            comment here is emitted as a literal text child and renders on the
+            page — which is exactly what happened: the whole paragraph appeared
+            in the canvas, including the words it was quoting. Inside an
+            `{if cond {` body the opposite holds and `{#* *#}` is a parse error.
+            Children take `{#* *#}`; statement bodies take `#`. *#}
         {if len(nodes) == 0 {
-            <p style={{"position": "absolute", "top": "50%", "left": "50%",
-                       "transform": "translate(-50%, -50%)", "fontSize": "13px",
-                       "opacity": "0.4"}}>{"no graph data"}</p>
+            <div style={{"position": "absolute", "top": "50%", "left": "50%",
+                         "transform": "translate(-50%, -50%)",
+                         "display": "flex", "flexDirection": "column",
+                         "alignItems": "center", "gap": "14px"}}>
+                {#* SMIL, not a CSS animation. A CSS `animation` needs a
+                    `@keyframes` rule, and the app renders entirely from inline
+                    styles with no stylesheet to put one in — injecting a
+                    `<style>` into `document.head` from a canvas component to
+                    spin one ring is a global side effect for a local problem.
+                    `<animateTransform>` carries its own timing. *#}
+                <svg width="26" height="26" viewBox="0 0 26 26">
+                    <circle cx="13" cy="13" r="11" fill="none" strokeWidth="2"
+                            stroke="rgba(226,234,246,0.14)" />
+                    <path d="M 13 2 A 11 11 0 0 1 24 13" fill="none"
+                          strokeWidth="2" strokeLinecap="round" stroke={WALK_COLOR}>
+                        <animateTransform attributeName="transform" type="rotate"
+                                          from="0 13 13" to="360 13 13"
+                                          dur="0.72s" repeatCount="indefinite" />
+                    </path>
+                </svg>
+                <p style={{"fontSize": "12px", "opacity": "0.5", "margin": "0",
+                           "fontFamily": "ui-monospace, monospace",
+                           "letterSpacing": "0.04em"}}>
+                    {"building the graph…"}
+                </p>
+                <p style={{"fontSize": "10px", "opacity": "0.28", "margin": "0",
+                           "fontFamily": "ui-monospace, monospace"}}>
+                    {"4,966 artifacts · 76,787 edges"}
+                </p>
+            </div>
         }}
     </div>;
 }

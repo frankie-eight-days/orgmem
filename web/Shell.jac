@@ -87,6 +87,27 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
 
     def handle_query(e: ChangeEvent) {
         query = e.target.value;
+        # Grow the box to fit what has been typed. A `<textarea>` does not
+        # auto-size, so height is reset to `auto` first — without that reset it
+        # only ever ratchets upward and never shrinks when the text is deleted.
+        el: any = e.target;
+        el.style.height = "auto";
+        el.style.height = str(min(el.scrollHeight as int, 132)) + "px";
+    }
+
+    # Enter sends, Shift+Enter breaks the line. A textarea's default is the
+    # opposite, and the default is wrong here: the box is a question field
+    # people type one sentence into, not a document editor.
+    def handle_key(e: any) {
+        if (e.key as str) == "Enter" and not e.shiftKey {
+            e.preventDefault();
+            if query != "" and not busy {
+                onSend(query);
+                query = "";
+                el2: any = e.target;
+                el2.style.height = "auto";
+            }
+        }
     }
 
     def handle_submit(e: FormEvent) {
@@ -179,13 +200,32 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
             <form onSubmit={handle_submit}
                   style={{"padding": "14px 22px 18px 22px",
                           "borderTop": "1px solid #1e2534"}}>
-                <input value={query} onChange={handle_query}
-                       placeholder="Ask the graph…"
-                       style={{"width": "100%", "boxSizing": "border-box",
-                               "padding": "11px 13px",
-                               "background": "#0e131e", "color": "#dbe3f0",
-                               "border": "1px solid #26304a", "borderRadius": "8px",
-                               "fontSize": "13px", "outline": "none"}} />
+                {#* A textarea, not an input. `<input>` scrolls a long question
+                    sideways under the caret, so the beginning of your own
+                    sentence disappears while you are still typing it. This
+                    wraps, grows to a 132px ceiling, then scrolls.
+
+                    The placeholder names a question the graph can actually
+                    answer rather than describing the box — "Ask the graph…"
+                    tells a visitor what the widget is, which they can already
+                    see, and nothing about what it is FOR. *#}
+                <textarea value={query} onChange={handle_query}
+                          onKeyDown={handle_key}
+                          rows={1}
+                          placeholder="Who else knows redis-cache?"
+                          style={{"width": "100%", "boxSizing": "border-box",
+                                  "padding": "11px 13px",
+                                  "background": "#0e131e", "color": "#dbe3f0",
+                                  "border": "1px solid #26304a", "borderRadius": "8px",
+                                  "fontSize": "13px", "outline": "none",
+                                  "fontFamily": "inherit", "lineHeight": "1.5",
+                                  "resize": "none", "overflowY": "auto",
+                                  "minHeight": "42px", "maxHeight": "132px",
+                                  "display": "block"}} />
+                <p style={{"fontSize": "10px", "opacity": "0.32", "margin": "7px 2px 0",
+                           "fontFamily": "ui-monospace, monospace"}}>
+                    {"enter to ask · shift+enter for a new line"}
+                </p>
             </form>
         </aside>
 
