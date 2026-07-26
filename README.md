@@ -47,9 +47,9 @@ the `EvalRun` walker; the raw output is committed as [`eval_results.json`](eval_
 | **Overall** | **54/57 · 94.7%** | — | |
 | COUNTERFACTUAL | *21 skipped* | — | Would Y still have happened without X? |
 
-**We do not score COUNTERFACTUAL, deliberately.** It asks whether an outcome survives removing a
+**I do not score COUNTERFACTUAL, deliberately.** It asks whether an outcome survives removing a
 cause. That is the simulator's internal counterfactual and is not decidable from the artifacts, so
-it is excluded rather than guessed. Declining to claim causal reasoning we can't verify is the
+it is excluded rather than guessed. Declining to claim causal reasoning I can't verify is the
 point of the project, not a gap in it.
 
 The SILENCE baseline matters: the 27 questions split 15 yes / 12 no, so a system that always
@@ -64,9 +64,9 @@ answers *"no, nothing was written"* scores **55.6%**. Beating it requires actual
 | `perspective_Alex_EVT-13-incident_opened-1396` | true | false | `AFTER_AS_OF_DAY` — boundary condition on the day cursor |
 | `perspective_Chloe_EVT-58-pr_review-1499` | false | true | `IN_CONE` — reachable but shouldn't count as knowledge |
 
-Two of the three are boundary conditions on the time cone. The first is the interesting one: our
+Two of the three are boundary conditions on the time cone. The first is the interesting one: the
 bounded space is the *causal* closure of the trigger, and tightening it to avoid false positives
-cost us one true positive. Widening it to an actor/time sweep makes every SILENCE answer "yes".
+cost one true positive. Widening it to an actor/time sweep makes every SILENCE answer "yes".
 
 </details>
 
@@ -215,7 +215,7 @@ rather than a pile of documents.
 **The corpus counts in *simulation days*, which are working days.** Jira artifacts carry calendar
 timestamps, so incident dates are converted by counting weekdays from 2026-01-01 — verified against
 the two `event_log` rows that carry both a `day` and a `date` (2026-03-16 → day 53, 2026-03-17 → day
-54). This is why we say "60 working days" and not "60 days".
+54). This is why it says "60 working days" and not "60 days".
 
 ### One thing the data says
 
@@ -224,7 +224,7 @@ day 12   Jordan leaves — owning auth-service, redis-cache and oauth2-flow, 25%
 day 13   ENG-137: a Redis TTL misconfiguration overloads TitanDB. Assigned to Yusuf.
 ```
 
-Two independent records, one day apart. **We report the adjacency and do not claim the cause** —
+Two independent records, one day apart. **orgmem reports the adjacency and does not claim the cause** —
 consistent with declining to score COUNTERFACTUAL. The inference belongs to the person reading it.
 
 Large data files are not committed:
@@ -252,7 +252,7 @@ The graph builds once and persists — everything reachable from `root` survives
 re-running does not rebuild it. There is no save call anywhere in this project.
 
 > **After editing any `.jac` file, do a full restart.** Hot reload silently serves stale bundles;
-> see [`HANDOFF.md`](HANDOFF.md) for that and eleven other things that cost us an hour each.
+> see [`HANDOFF.md`](HANDOFF.md) for that and eleven other things that cost me an hour each.
 
 ---
 

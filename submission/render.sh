@@ -28,4 +28,9 @@ size = os.path.getsize(p)
 print("size:", im.size)
 print("bytes:", size, "(%.2f MB)" % (size / 1024 / 1024))
 print("ok:", im.size == (1800, 1200) and size < 5 * 1024 * 1024)
+
+# Devpost-tile legibility check: the motif has to survive this reduction.
+tile = im.convert("RGB").resize((450, 300), Image.LANCZOS)
+tile.save(os.path.join(os.path.dirname(p), "thumbnail-tilecheck.png"))
+print("tilecheck:", tile.size)
 PY
