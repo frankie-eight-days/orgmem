@@ -54,6 +54,7 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
               hops_done: int, hops_total: int,
               thread: list, onSend: Callable[[str], None],
               live: dict[str, any] = {}, turnAt: int = 0, turnMax: int = 0,
+              onReset: any = None,
               card: dict[str, any] = {}, cx: float = 0.0, cy: float = 0.0,
               onNodeClick: any = None, onOpenRef: any = None,
               onCloseCard: any = None) -> JsxElement {
@@ -110,10 +111,16 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
                              "justifyContent": "space-between"}}>
                     <h1 style={{"fontSize": "18px", "letterSpacing": "0.12em",
                                 "margin": "0 0 4px 0"}}>{"ORGMEM"}</h1>
-                    <Link to="/" style={{"fontSize": "11px", "opacity": "0.5",
-                                         "color": "#dbe3f0", "textDecoration": "none"}}>
-                        {"← about"}
-                    </Link>
+                    <div style={{"display": "flex", "gap": "12px",
+                                 "alignItems": "baseline"}}>
+                        {if len(thread) > 0 {
+                            <ResetButton onReset={onReset} />
+                        }}
+                        <Link to="/" style={{"fontSize": "11px", "opacity": "0.5",
+                                             "color": "#dbe3f0", "textDecoration": "none"}}>
+                            {"← about"}
+                        </Link>
+                    </div>
                 </div>
                 <p style={{"fontSize": "12px", "opacity": "0.55", "margin": "0"}}>
                     {"ask in english · answered by a walker, not a model"}
@@ -258,6 +265,25 @@ def:pub RichLine(raw: str, dim: bool = False) -> JsxElement {
             }}
         </span>
     </div>;
+}
+
+
+# Back to the opening state. Shown only once there is something to reset, so
+# the header is quiet on first load — the pane should open on the questions,
+# not on its own controls.
+def:pub ResetButton(onReset: any = None) -> JsxElement {
+    def handle(e: MouseEvent) {
+        if onReset {
+            onReset();
+        }
+    }
+    return <button onClick={handle}
+                   style={{"fontSize": "11px", "cursor": "pointer",
+                           "padding": "2px 8px", "borderRadius": "6px",
+                           "background": "transparent", "color": "#8fa3c4",
+                           "border": "1px solid #26304a"}}>
+        {"↺ new chat"}
+    </button>;
 }
 
 

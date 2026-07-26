@@ -507,6 +507,23 @@ def:pub AppScreen -> JsxElement {
     # and `view` (which collapses back to `graph` because `merge_walk` sees an
     # empty route). Deliberately does NOT touch `graph` or `cap` — refetching
     # the slice would reshuffle a layout the audience has already learned.
+    # Back to the opening state: no conversation, no walk, prefilled questions
+    # showing. Distinct from `clear_walk` only in intent — this one is in the
+    # chat header where you look for it between demo runs, rather than in the
+    # graph toolbar. Deliberately does NOT refetch the slice: relayouting the
+    # graph would throw away the arrangement the room has already learned.
+    def reset_chat {
+        thread = [];
+        ctx = "";
+        answer = BLANK;
+        step = 0;
+        pending = {};
+        live = {};
+        turn_at = 0;
+        turn_max = 0;
+        busy = False;
+    }
+
     # Also empties the conversation, which is what puts the prefilled questions
     # back — one button to reset the stage between runs.
     def clear_walk {
@@ -527,7 +544,7 @@ def:pub AppScreen -> JsxElement {
         <Shell answer={answer} busy={busy} graph={view}
                active={active} walked={walked}
                hops_done={step} hops_total={len(path)}
-               thread={thread} onSend={send} live={live}
+               thread={thread} onSend={send} live={live} onReset={reset_chat}
                turnAt={turn_at} turnMax={turn_max}
                card={card} cx={cx} cy={cy}
                onNodeClick={open_card} onOpenRef={open_ref}
