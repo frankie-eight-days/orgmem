@@ -304,7 +304,7 @@ def:pub AppScreen -> JsxElement {
         # graph…" on screen until there is something to show.
         pending = {"role": "bot", "text": a["say"], "verdict": a["verdict"],
                    "reason": a["reason"], "evidence": a["evidence"],
-                   "route": a["route"]};
+                   "route": a["route"], "chips": a["chips"]};
     }
 
     # Clicking a dot opens the artifact it stands for. The anchor is set before

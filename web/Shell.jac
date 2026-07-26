@@ -124,7 +124,7 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
                 }}
 
                 {for (i, m) in enumerate(thread) {
-                    <Bubble key={str(i)} msg={m} />
+                    <Bubble key={str(i)} msg={m} onSend={onSend} />
                 }}
 
                 {if busy {
@@ -202,7 +202,7 @@ def:pub ChipButton(label: str, onSend: Callable[[str], None]) -> JsxElement {
 # One turn. A user turn is the sentence; an assistant turn is the walker's
 # verdict, the sentence the answer resolves to, its citations, and the walker
 # call it came from.
-def:pub Bubble(msg: dict[str, any]) -> JsxElement {
+def:pub Bubble(msg: dict[str, any], onSend: Callable[[str], None]) -> JsxElement {
     role: str = msg["role"] as str;
     if role == "user" {
         return <div style={{"marginBottom": "16px", "display": "flex",
@@ -217,6 +217,9 @@ def:pub Bubble(msg: dict[str, any]) -> JsxElement {
 
     verdict: str = (msg["verdict"] as str) if msg["verdict"] else "";
     evidence: list[str] = dedupe((msg["evidence"] as list) if msg["evidence"] else []);
+    # Present only on the help and out-of-scope answers, and absent entirely on
+    # every walker answer — so it is read defensively, not indexed.
+    chips: list[str] = (msg["chips"] as list[str]) if msg["chips"] else [];
 
     return <div style={{"marginBottom": "20px"}}>
         {if verdict != "" {
@@ -229,6 +232,13 @@ def:pub Bubble(msg: dict[str, any]) -> JsxElement {
         {if msg["reason"] {
             <p style={{"fontSize": "11px", "lineHeight": "1.5", "opacity": "0.55",
                        "margin": "0 0 10px 0"}}>{msg["reason"]}</p>
+        }}
+        {if len(chips) > 0 {
+            <div style={{"marginTop": "4px"}}>
+                {for c in chips {
+                    <ChipButton key={c} label={c} onSend={onSend} />
+                }}
+            </div>
         }}
         {if len(evidence) > 0 {
             <div>

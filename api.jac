@@ -469,7 +469,7 @@ glob KIMI_MODEL: str = "kimi-for-coding-highspeed";
 
 glob INTENT_RULES: str = """You route a question about an engineering org's history to ONE graph query. Reply with JSON only.
 Keys:
-  "key": one of "onboarding","postmortem","gap35","felix","janice_see","who","best","none"
+  "key": one of "onboarding","postmortem","gap35","felix","janice_see","who","best","help","none"
   "domain": a subsystem name from the list below, or ""
 Meaning:
   onboarding = was the new hire Janice ever given an onboarding session
@@ -479,6 +479,7 @@ Meaning:
   janice_see = could Janice have known about the day-3 design discussion
   who        = who knows / owns a subsystem, bus factor
   best       = who is the best person to pick up, do, own, or write something
+  help       = the user is asking what they can ask, or what this can do
   none       = the graph cannot answer this
 If the question is a follow-up with no subject of its own, use CONTEXT as the domain.
 Subsystems: """;
@@ -590,11 +591,28 @@ def slots_for(key: str, domain: str, ctx: str) -> dict[str, str] {
     if key == "best" {
         return {"intent": "best", "domain": domain if domain else ctx};
     }
+    if key == "help" {
+        return {"intent": "help"};
+    }
     if key == "none" {
         return {"intent": "none"};
     }
     return {};
 }
+
+
+# Literal questions, not abstract shapes. "was <X> ever written after <event>"
+# tells someone what the walker does; it does not tell them what to type. Both
+# the help answer and the out-of-scope answer offer these, and the UI renders
+# them as buttons that send themselves.
+glob EXAMPLES: list[str] = [
+    "Was Janice ever given an onboarding session?",
+    "Who knows TitanDB?",
+    "Who would be the best person to pick up TitanDB?",
+    "Did we ever do the postmortem for the day-25 incident?",
+    "Could Felix have known about the CRM touchpoint on day 32?",
+    "Was the day-35 knowledge gap ever written up?"
+];
 
 
 # Model first, keywords second. The fallback is not decoration: it is what
@@ -633,6 +651,11 @@ def keyword_intent(text: str, ctx_domain: str) -> dict[str, str] {
     }
 
     # 3. Onboarding — the strongest absence in the corpus.
+    if has_any(q, ["what can i ask", "what can you", "what do you", "help",
+                   "examples", "how does this work", "what is this"]) {
+        return {"intent": "help"};
+    }
+
     if has_any(q, ["onboard", "warmup", "1:1", "1-on-1", "handover", "handoff"]) {
         return {"intent": "gap", "trigger": "EVT-7-employee_hired-1030",
                 "expected": "onboarding_session",
@@ -678,6 +701,7 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
     slots: dict[str, str] = route_intent(text, ctx_domain);
     kind: str = slots["intent"];
     a: dict[str, any] = empty_answer();
+    a["chips"] = [];
     say: str = "";
     route: str = "";
     ctx: str = ctx_domain;
@@ -747,17 +771,18 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
         } else {
             say = f"No — no route reaches {who} by that day. The walk below is the reachable cone; the event is not in it.";
         }
+    } elif kind == "help" {
+        a["title"] = "What can this answer?";
+        a["reason"] = "Four kinds of question, over a 60-day corpus of 22,530 records: who knows a subsystem, who should pick one up, whether something was ever written after an event, and whether a person could have known about one on a given day.";
+        a["chips"] = EXAMPLES;
+        say = "Ask about who knows what, where it is written, or where it is not. Any of these run:";
+        route = "no walker — asking what to ask";
     } else {
         a["title"] = text;
         a["verdict"] = "out of scope";
-        a["reason"] = "This graph answers three shapes of question, and this is not one of them.";
-        a["evidence"] = [
-            "who knows <subsystem> — ranking and bus factor",
-            "who should pick up <subsystem> — the same ranking, minus the leavers",
-            "was <X> ever written after <event> — a proven absence",
-            "could <person> have known about <event> — reachability on that day"
-        ];
-        say = "I can only answer what the graph can prove. Try one of the four shapes listed.";
+        a["reason"] = "The graph holds who wrote what, when, and what referenced it. It cannot answer questions outside that record — and it will say so rather than guess.";
+        a["chips"] = EXAMPLES;
+        say = "I can only answer what the graph can prove. These all work:";
         route = "no walker matched";
     }
 
@@ -765,6 +790,9 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
     # the point of the pane is that a sentence became a traversal, and the
     # audience should be able to see which sentence became which traversal.
     a["say"] = say;
+    # The walker answers replace `a` wholesale with their own shape, so the key
+    # is re-established here rather than assumed to have survived.
+    a["chips"] = a["chips"] if "chips" in a else [];
     a["route"] = route + ("  ·  parsed by " + slots["by"] if "by" in slots else "");
     a["ctx_domain"] = ctx;
     return a;
