@@ -1,0 +1,33 @@
+[project]
+name = "orgmem"
+version = "0.1.0"
+description = "Organizational memory for agents — who knows what, where it's written, and where it isn't"
+# app.jac is the fullstack entry: it imports every walker from main.jac (so they
+# still register) and mounts the Jac client UI in web/. `jac run main.jac` and
+# `jac start main.jac` are unaffected — they name the file explicitly.
+entry-point = "app.jac"
+
+# Required at import time by main.jac to read data/corpus.parquet. Without
+# these a clean clone fails at `import pandas;` before the graph is ever built.
+[dependencies]
+pandas = ">=2.0"
+pyarrow = ">=14.0"
+
+# Client (web/) build deps. Without these the generated client package.json has
+# empty dependencies, bun installs nothing, and the vite dev server dies with
+# "Cannot find package 'vite'".
+[dependencies.npm]
+react = "^18.2.0"
+react-dom = "^18.2.0"
+react-router-dom = "^6.22.0"
+react-error-boundary = "^5.0.0"
+"react-force-graph-2d" = "^1.25.0"
+
+[dependencies.npm.dev]
+vite = "^6.4.1"
+"@vitejs/plugin-react" = "^4.2.1"
+
+[serve]
+base_route_app = "app"
+
+[client]

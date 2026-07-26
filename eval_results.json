@@ -1,0 +1,522 @@
+{
+  "headline": "SILENCE 26/27 = 96.3% vs 55.6% baseline | PERSPECTIVE 28/30 = 93.3% vs 63.3% baseline",
+  "summary": [
+    {
+      "type": "SILENCE",
+      "correct": 26,
+      "scored": 27,
+      "accuracy": 96.3
+    },
+    {
+      "type": "PERSPECTIVE",
+      "correct": 28,
+      "scored": 30,
+      "accuracy": 93.3
+    }
+  ],
+  "overall": {
+    "correct": 54,
+    "scored": 57,
+    "accuracy": 94.7
+  },
+  "constant_baseline": [
+    {
+      "type": "SILENCE",
+      "always_true": 55.6,
+      "best_constant": 55.6
+    },
+    {
+      "type": "PERSPECTIVE",
+      "always_true": 36.7,
+      "best_constant": 63.3
+    }
+  ],
+  "skipped": {
+    "COUNTERFACTUAL": 21
+  },
+  "skipped_note": "COUNTERFACTUAL asks whether an outcome survives removing a cause. That is the simulator's internal counterfactual and is not decidable from the artifacts, so it is excluded rather than guessed.",
+  "failures": [
+    {
+      "id": "silence_EVT-18-knowledge_gap_detected-1367_confluence_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": false,
+      "pass": false,
+      "detail": "searched=4"
+    },
+    {
+      "id": "perspective_Alex_EVT-13-incident_opened-1396",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": false,
+      "pass": false,
+      "detail": "AFTER_AS_OF_DAY"
+    },
+    {
+      "id": "perspective_Chloe_EVT-58-pr_review-1499",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": true,
+      "pass": false,
+      "detail": "IN_CONE"
+    }
+  ],
+  "rows": [
+    {
+      "id": "silence_EVT-8-incident_opened-1219_sf_deals_risk_flagged",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=46"
+    },
+    {
+      "id": "silence_EVT-38-knowledge_gap_detected-1453_confluence_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-15-customer_email_routed-1428_zd_ticket_opened",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-37-zd_tickets_escalated-1317_incident_opened",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=57"
+    },
+    {
+      "id": "perspective_Alex_EVT-28-incident_resolved-1522",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "silence_EVT-60-inbound_external_email-1396_customer_email_rout",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-25-incident_opened-1460_postmortem_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=46"
+    },
+    {
+      "id": "perspective_Felix_EVT-32-crm_touchpoint-1446",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "perspective_Janice_EVT-3-design_discussion-458",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NEVER_CREATED"
+    },
+    {
+      "id": "silence_EVT-54-knowledge_gap_detected-1541_confluence_created",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=4"
+    },
+    {
+      "id": "perspective_Mike_EVT-22-inbound_external_email-1360",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Chloe_EVT-55-knowledge_gap_detected-1480",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Chloe_EVT-56-knowledge_gap_detected-1562",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "silence_EVT-57-knowledge_gap_detected-1433_confluence_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=7"
+    },
+    {
+      "id": "perspective_Vince_EVT-49-vendor_email_routed-1539",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Karen_EVT-9-retrospective-1348",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Jordan_EVT-25-incident_opened-1460",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "silence_EVT-7-employee_hired-1030_onboarding_session",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=2"
+    },
+    {
+      "id": "perspective_Vince_EVT-49-incident_resolved-1520",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "perspective_Elena_EVT-58-confluence_created-1373",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NEVER_CREATED"
+    },
+    {
+      "id": "perspective_Nadia_EVT-32-incident_resolved-1524",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "silence_EVT-29-customer_email_routed-1499_zd_ticket_opened",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-24-inbound_external_email-1422_customer_email_rout",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-55-inbound_external_email-1516_customer_email_rout",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-18-knowledge_gap_detected-1367_confluence_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": false,
+      "pass": false,
+      "detail": "searched=4"
+    },
+    {
+      "id": "silence_EVT-17-incident_opened-1323_postmortem_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=49"
+    },
+    {
+      "id": "perspective_Ben_EVT-59-pr_review-1529",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "silence_EVT-54-incident_opened-1631_postmortem_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=57"
+    },
+    {
+      "id": "silence_EVT-15-inbound_external_email-1425_customer_email_rout",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-7-employee_hired-1030_warmup_1on1",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=2"
+    },
+    {
+      "id": "silence_EVT-7-customer_email_routed-1191_zd_ticket_opened",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "perspective_Chloe_EVT-48-knowledge_gap_detected-1495",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Marcus_EVT-29-retrospective-1542",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "silence_EVT-17-incident_opened-1323_incident_resolved",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=49"
+    },
+    {
+      "id": "silence_EVT-4-inbound_external_email-530_jira_from_vendor_emai",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "perspective_Tom_EVT-39-watercooler_chat-1424",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Karen_EVT-2-ticket_completion_email-270",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "perspective_Felix_EVT-4-vendor_email_routed-540",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "silence_EVT-35-knowledge_gap_detected-1441_confluence_created",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=8"
+    },
+    {
+      "id": "perspective_Mike_EVT-11-knowledge_gap_detected-1309",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Nadia_EVT-51-jira_ticket_created-1537",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    },
+    {
+      "id": "perspective_Alex_EVT-53-incident_resolved-1606",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Alex_EVT-13-incident_opened-1396",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": false,
+      "pass": false,
+      "detail": "AFTER_AS_OF_DAY"
+    },
+    {
+      "id": "silence_EVT-13-incident_opened-1396_zd_tickets_escalated",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=46"
+    },
+    {
+      "id": "silence_EVT-30-email_dropped-1451_zd_ticket_opened",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=3"
+    },
+    {
+      "id": "perspective_Janice_EVT-54-incident_opened-1631",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Jordan_EVT-28-postmortem_created-1521",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Blake_EVT-59-customer_email_routed-1440",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Janice_EVT-2-confluence_created-299",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Blake_EVT-31-customer_email_routed-1474",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "NOT_REACHABLE"
+    },
+    {
+      "id": "perspective_Jordan_EVT-49-postmortem_created-1519",
+      "type": "PERSPECTIVE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "silence_EVT-13-incident_opened-1396_postmortem_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=46"
+    },
+    {
+      "id": "silence_EVT-41-inbound_external_email-1476_customer_email_rout",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=5"
+    },
+    {
+      "id": "silence_EVT-55-inbound_external_email-1577_jira_from_vendor_em",
+      "type": "SILENCE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "searched=7"
+    },
+    {
+      "id": "silence_EVT-29-knowledge_gap_detected-1455_confluence_created",
+      "type": "SILENCE",
+      "expected": true,
+      "got": true,
+      "pass": true,
+      "detail": "searched=8"
+    },
+    {
+      "id": "perspective_Chloe_EVT-58-pr_review-1499",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": true,
+      "pass": false,
+      "detail": "IN_CONE"
+    },
+    {
+      "id": "perspective_Blake_EVT-30-jira_ticket_created-1511",
+      "type": "PERSPECTIVE",
+      "expected": false,
+      "got": false,
+      "pass": true,
+      "detail": "ACCESS_BLOCKED"
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 __pycache__/
+_reference/
 .DS_Store
 .env
 .jac/
 *.pyc
+dist/
 web/kernel.js
 web/styles.css
