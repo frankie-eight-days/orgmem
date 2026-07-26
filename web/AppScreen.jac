@@ -35,7 +35,7 @@ walker while the audience is trying to follow a token across it.
 """
 
 import from react { useEffect }
-sv import from ..api { graph_data, ask, node_card, chat, agent }
+sv import from ..api { graph_data, ask, node_card, chat, agent, agent_step }
 import from .Shell { Shell }
 import from .GraphCanvas { SpeedButton }
 
@@ -241,6 +241,11 @@ def:pub AppScreen -> JsxElement {
     has pending: dict[str, any] = {};
     has reveal: int = 0;
 
+    # The in-flight assistant turn: the tool calls made so far, rendered under
+    # the thread while the loop is still running. Cleared when the finished
+    # message is appended.
+    has live: dict[str, any] = {};
+
     # Playback speed for the walk, as a multiplier on HOP_MS. Changing it
     # restarts the reveal from step 0 — the interval is keyed on it — which is
     # the behaviour you want on stage: pick a pace, replay the walk at it.
@@ -290,11 +295,41 @@ def:pub AppScreen -> JsxElement {
         busy = True;
         thread = thread + [{"role": "user", "text": text, "verdict": "",
                             "reason": "", "evidence": [], "route": ""}];
-        a: dict[str, any] = await agent(text);
+        # One round trip per model turn, so each tool call is painted the
+        # moment it lands instead of after the whole loop. `live` is the
+        # in-flight bubble; it accumulates the trace and is rendered under the
+        # thread until the final answer replaces it.
+        live = {"role": "bot", "text": "", "verdict": "", "reason": "",
+                "evidence": [], "route": "", "chips": [], "trace": []};
+        state: str = "";
+        a: dict[str, any] = {};
+        hop: int = 0;
+        while hop < 8 {
+            hop = hop + 1;
+            r: dict[str, any] = await agent_step(text, state);
+            if not r {
+                break;
+            }
+            new_steps: list = (r["steps"] as list) if r["steps"] else [];
+            if len(new_steps) > 0 {
+                live = {"role": "bot", "text": "", "verdict": "", "reason": "",
+                        "evidence": [], "route": "", "chips": [],
+                        "trace": (live["trace"] as list) + new_steps};
+            }
+            if r["done"] {
+                a = r["answer"] as dict[str, any];
+                break;
+            }
+            state = r["state"] as str;
+        }
         if not a {
+            live = {};
             busy = False;
             return;
         }
+        # The finished bubble carries the whole trace the live one accumulated.
+        a["trace"] = live["trace"] if live["trace"] else [];
+        live = {};
         answer = a;
         ctx = (a["ctx_domain"] as str) if a["ctx_domain"] else ctx;
         # Parked, not appended. Setting `answer` above starts the walk; the
@@ -462,7 +497,7 @@ def:pub AppScreen -> JsxElement {
         <Shell answer={answer} busy={busy} graph={view}
                active={active} walked={walked}
                hops_done={step} hops_total={len(path)}
-               thread={thread} onSend={send}
+               thread={thread} onSend={send} live={live}
                card={card} cx={cx} cy={cy}
                onNodeClick={open_card} onOpenRef={open_ref}
                onCloseCard={close_card} />

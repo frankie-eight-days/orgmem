@@ -1126,3 +1126,129 @@ def:pub agent(text: str) -> dict[str, any] {
         "trace": trace
     };
 }
+
+
+# ---------------------------------------------------- 7. the agent, streamed
+#
+# `agent` above runs the whole loop server-side and returns once. That is the
+# right shape for a script and the wrong one for a person: a question with a
+# twelve-way fan-out sits on "walking the graph…" for fifteen seconds with
+# nothing to read, and the most interesting part of this system — which tool it
+# reached for, and what came back — happens entirely out of sight.
+#
+# `agent_step` runs exactly ONE model turn and hands the conversation back, so
+# the client can loop and paint each turn as it lands. State travels in the
+# round trip rather than living on the server: no session table, no expiry, no
+# cross-request races, and a reload simply starts a new question.
+def:pub agent_step(text: str, state: str) -> dict[str, any] {
+    if not api_key() {
+        one: dict[str, any] = chat(text, "");
+        return {"done": True, "state": "", "steps": [], "answer": one};
+    }
+
+    msgs: list[any] = [];
+    answers: list[any] = [];
+    turn: int = 0;
+    if state {
+        try {
+            st: dict[str, any] = json.loads(state);
+            msgs = st["msgs"] as list;
+            answers = st["answers"] as list;
+            turn = int(st["turn"]);
+        } except Exception as e {
+            msgs = [];
+        }
+    }
+    if not msgs {
+        msgs = [{"role": "system", "content": agent_system()},
+                {"role": "user", "content": text}];
+    }
+
+    turn += 1;
+    steps: list[dict[str, any]] = [];
+    m: dict[str, any] = llm_turn(msgs);
+    calls: list[any] = (m["tool_calls"] as list) if (m and "tool_calls" in m and m["tool_calls"]) else [];
+
+    # No tool calls, or the model failed, or we are out of turns: this is the
+    # last step, so assemble the same payload `agent` would have returned.
+    if not calls or turn >= MAX_TURNS {
+        final: str = str(m["content"]) if (m and "content" in m and m["content"]) else "";
+        if not final and not answers {
+            final = "I could not resolve that against the graph.";
+        }
+        return {"done": True, "state": "", "steps": [],
+                "answer": assemble(text, answers, final, turn)};
+    }
+
+    msgs.append(m);
+    for tc in calls {
+        fn: dict[str, any] = tc["function"];
+        name: str = str(fn["name"]);
+        args: dict[str, any] = {};
+        try {
+            args = json.loads(str(fn["arguments"]));
+        } except Exception as e {
+            args = {};
+        }
+        out: dict[str, any] = run_tool(name, args);
+        res: dict[str, any] = out["result"];
+        if out["answer"] {
+            answers.append(out["answer"]);
+        }
+        steps.append({"tool": name, "args": arg_line(args),
+                      "note": trace_note(name, res)});
+        msgs.append({"role": "tool", "tool_call_id": tc["id"],
+                     "content": json.dumps(res)});
+    }
+
+    return {
+        "done": False,
+        "state": json.dumps({"msgs": msgs, "answers": answers, "turn": turn}),
+        "steps": steps,
+        "answer": {}
+    };
+}
+
+
+# The union of everything the walkers lit up, plus the headline rules. Shared
+# by `agent` and `agent_step` so the streamed and unstreamed paths cannot drift
+# apart in what they claim.
+def assemble(text: str, answers: list[any], final: str, turns: int) -> dict[str, any] {
+    path: list[list[str]] = [];
+    hl: list[str] = [];
+    ev: list[str] = [];
+    for a4 in answers {
+        for pair in (a4["path"] as list)[:12] {
+            if len(path) < 90 {
+                path.append([pair[0] as str, pair[1] as str]);
+            }
+        }
+        for g in (a4["highlight"] as list)[:14] {
+            gs: str = g as str;
+            if gs not in hl and len(hl) < 140 {
+                hl.append(gs);
+            }
+        }
+        for e2 in (a4["evidence"] as list)[:6] {
+            es: str = e2 as str;
+            if es not in ev {
+                ev.append(es);
+            }
+        }
+    }
+    verdict: str = str(answers[0]["verdict"]) if len(answers) == 1 else "";
+    reason: str = str(answers[0]["reason"]) if len(answers) == 1 else "";
+    ctx: str = "";
+    for a5 in answers {
+        if "top" in a5 {
+            ctx = str(a5["title"]).replace("Who knows ", "").replace("?", "");
+        }
+    }
+    return {
+        "title": text, "verdict": verdict, "reason": reason,
+        "evidence": ev[:10], "highlight": hl, "path": path,
+        "say": final, "chips": [], "ctx_domain": ctx,
+        "route": f"{len(answers)} walker(s) · {turns} turn(s) · {KIMI_MODEL}",
+        "trace": []
+    };
+}

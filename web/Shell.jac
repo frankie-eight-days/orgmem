@@ -51,6 +51,7 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
               active: list[str], walked: list[list[str]],
               hops_done: int, hops_total: int,
               thread: list, onSend: Callable[[str], None],
+              live: dict[str, any] = {},
               card: dict[str, any] = {}, cx: float = 0.0, cy: float = 0.0,
               onNodeClick: any = None, onOpenRef: any = None,
               onCloseCard: any = None) -> JsxElement {
@@ -65,6 +66,13 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
     # two steps so the `and` never lands in the ternary's condition.
     raw_gid: any = card["gid"] if card else "";
     card_gid: str = (raw_gid as str) if raw_gid else "";
+
+    # Tool calls made by the turn currently in flight. Counted rather than
+    # tested for emptiness, for the same reason as `card`: `{}` is truthy in JS
+    # and `len()` on a client-side object is undefined, but `len()` on a real
+    # array is not.
+    raw_live: any = live["trace"] if live else [];
+    live_steps: int = len(raw_live as list) if raw_live else 0;
 
     # The follow-up is offered only when the last answer was an absence, which
     # is exactly when "so who should do it?" is the real next question.
@@ -127,9 +135,16 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
                     <Bubble key={str(i)} msg={m} onSend={onSend} />
                 }}
 
+                {if live_steps > 0 {
+                    <Bubble msg={live} onSend={onSend} />
+                }}
+
                 {if busy {
                     <p style={{"fontSize": "12px", "opacity": "0.6",
-                               "margin": "8px 0"}}>{"walking the graph…"}</p>
+                               "margin": "8px 0"}}>
+                        {"walking the graph…" if live_steps > 0
+                         else "reading the question…"}
+                    </p>
                 }}
 
                 {if last_no and not busy {

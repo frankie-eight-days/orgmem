@@ -15,7 +15,7 @@ Routing is MANUAL (`<Router>`/`<Routes>` inside `AppShell`), not file-based, so
 directory — the two systems fight over the URL if both are present.
 """
 
-import from api { graph_data, expand_node, ask, node_card, chat, agent }
+import from api { graph_data, expand_node, ask, node_card, chat, agent, agent_step }
 import from .web.AppShell { AppShell }
 
 def:pub app -> JsxElement {
