@@ -22,9 +22,10 @@ import from .card.Card { Card }
 # demo is exercising the parser rather than bypassing it.
 glob CHIPS: list[str] = [
     "What tools do you have access to on the graph?",
+    "Where are we most exposed if someone quits tomorrow?",
+    "How is Janice connected to Bill?",
     "Which incidents never got a postmortem?",
     "Was Janice ever given an onboarding session?",
-    "Could Felix have known about the CRM touchpoint on day 32?",
     "Who knows TitanDB?"
 ];
 
