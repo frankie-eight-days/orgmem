@@ -1,53 +1,35 @@
-"""OrgMem UI shell — question panel on the left, graph canvas on the right.
+"""OrgMem UI shell — chat pane on the left, graph canvas on the right.
 
-Pure presentation: all state and every server call live in `AppScreen`. Every
-answer arrives in one shape (verdict / reason / evidence / highlight / path), so
-one panel renders all four questions and the canvas always knows what to light
-up.
+Pure presentation: all state and every server call live in `AppScreen`.
 
-The free-text box resolves a typed question to one of the four walker queries by
-keyword and says which one it picked. It is not a natural-language front end and
-does not pretend to be one — the four questions below are the ones the graph can
-answer, and the box is a faster way to reach them than the buttons.
+The pane is a conversation, but it is not a chatbot. Each turn is sent to
+`chat` on the server, which resolves it to a typed intent — which walker, which
+arguments — and spawns that walker; the verdict, the citation and the searched
+space all come back out of the traversal. The `route` line under each answer is
+the walker call the sentence resolved to, printed so the audience can see that
+the sentence became a traversal and not a prompt.
+
+The chips are the same path as typing: they send their own text through the
+same parser. They are prefilled questions, not a second code path — so a chip
+that works proves the typed version works too.
 """
 
 import from "@jac/runtime" { Link }
 import from .GraphCanvas { GraphCanvas }
 import from .card.Card { Card }
 
-glob PRESETS: list[dict[str, str]] = [
-    {"key": "felix", "label": "Could Felix have known about the CRM touchpoint on day 32?"},
-    {"key": "janice", "label": "Could Janice have known about the day-3 design discussion?"},
-    {"key": "gap", "label": "Was a Confluence page written after the day-38 gap?"},
-    {"key": "titan", "label": "Who knows TitanDB?"}
+# Prefilled questions. Each one is sent as literal text through `chat`, so the
+# demo is exercising the parser rather than bypassing it.
+glob CHIPS: list[str] = [
+    "Was Janice ever given an onboarding session?",
+    "Did we ever do the postmortem for the day-25 incident?",
+    "Could Felix have known about the CRM touchpoint on day 32?",
+    "Who knows TitanDB?"
 ];
 
-# Keyword → preset. First match wins, so the more specific terms come first.
-glob ROUTES: list[dict[str, str]] = [
-    {"word": "felix", "key": "felix"},
-    {"word": "crm", "key": "felix"},
-    {"word": "salesforce", "key": "felix"},
-    {"word": "janice", "key": "janice"},
-    {"word": "design", "key": "janice"},
-    {"word": "confluence", "key": "gap"},
-    {"word": "gap", "key": "gap"},
-    {"word": "silence", "key": "gap"},
-    {"word": "wrote", "key": "gap"},
-    {"word": "titandb", "key": "titan"},
-    {"word": "titan", "key": "titan"},
-    {"word": "knows", "key": "titan"},
-    {"word": "bus factor", "key": "titan"}
-];
-
-def resolve_preset(text: str) -> str {
-    q: str = text.lower();
-    for r in ROUTES {
-        if r["word"] in q {
-            return r["key"];
-        }
-    }
-    return "";
-}
+# Offered after an answer that came back an absence. A proven "no" always
+# raises the same next question, and it is the one the graph answers best.
+glob FOLLOWUP: str = "Who would be the best person to do it?";
 
 # Walkers report their search space verbatim, which for a Slack-heavy channel
 # means eight near-identical lines. Distinct lines are the informative ones.
@@ -58,56 +40,39 @@ def dedupe(items: list) -> list[str] {
         if s not in out {
             out.append(s);
         }
-        if len(out) >= 8 {
+        if len(out) >= 6 {
             break;
         }
     }
     return out;
 }
 
-def label_for(key: str) -> str {
-    for p in PRESETS {
-        if p["key"] == key {
-            return p["label"];
-        }
-    }
-    return "";
-}
-
 def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
               active: list[str], walked: list[list[str]],
               hops_done: int, hops_total: int,
-              onAsk: Callable[[str], None],
+              thread: list, onSend: Callable[[str], None],
               card: dict[str, any] = {}, cx: float = 0.0, cy: float = 0.0,
               onNodeClick: any = None, onOpenRef: any = None,
               onCloseCard: any = None) -> JsxElement {
 
     has query: str = "";
 
-    # Nothing from the server is dotted into unguarded: any walker can come back
-    # None, empty or half-shaped, and one bad subscript takes down the page.
-    verdict: str = (answer["verdict"] as str) if (answer and answer["verdict"]) else "";
-    raw_evidence: list = (answer["evidence"] as list) if (answer and answer["evidence"]) else [];
-    evidence: list = dedupe(raw_evidence);
-    hidden: int = len(raw_evidence) - len(evidence);
     gnodes: list = (graph["nodes"] as list) if (graph and graph["nodes"]) else [];
     glinks: list = (graph["links"] as list) if (graph and graph["links"]) else [];
-    matched: str = resolve_preset(query);
 
-    # "Is a card open" is a field test, not a size: `len()` on a client-side
-    # object lowers to `.length`, which is `undefined`, so both `> 0` and `== 0`
-    # are false. `gid` rather than `kind`, because an unknown id comes back with
-    # an empty kind and still deserves a window saying so.
-    #
-    # Written as TWO steps on purpose. The obvious one-liner
-    #     card_gid: str = (card["gid"] as str) if (card and card["gid"]) else "";
-    # is WRONG here and renders an empty card on first paint: `a and b` lowers to
-    # a helper with Python semantics, which returns the empty dict `{}` — falsy
-    # to Python — and that value is then used as the raw condition of a JS
-    # ternary, where `{}` is TRUTHY. The guard inverts. Keeping the `and` out of
-    # the condition keeps both languages agreeing.
+    # See the note in `AppScreen`: `{}` is truthy in JS and `len()` on a
+    # client-side object is undefined, so emptiness is a field test, written in
+    # two steps so the `and` never lands in the ternary's condition.
     raw_gid: any = card["gid"] if card else "";
     card_gid: str = (raw_gid as str) if raw_gid else "";
+
+    # The follow-up is offered only when the last answer was an absence, which
+    # is exactly when "so who should do it?" is the real next question.
+    last_no: bool = False;
+    if len(thread) > 0 {
+        tail: dict[str, any] = thread[len(thread) - 1];
+        last_no = (tail["role"] == "bot") and ("NO" in (tail["verdict"] as str));
+    }
 
     def handle_query(e: ChangeEvent) {
         query = e.target.value;
@@ -115,78 +80,80 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
 
     def handle_submit(e: FormEvent) {
         e.preventDefault();
-        key: str = resolve_preset(query);
-        if key != "" {
-            onAsk(key);
+        if query != "" and not busy {
+            onSend(query);
+            query = "";
         }
     }
 
     return <div style={{"display": "flex", "height": "100vh", "width": "100vw",
                         "fontFamily": "system-ui, sans-serif",
                         "background": "#0b0e14", "color": "#dbe3f0"}}>
-        <aside style={{"width": "400px", "flexShrink": "0", "padding": "24px",
-                       "overflowY": "auto", "borderRight": "1px solid #1e2534",
+        <aside style={{"width": "420px", "flexShrink": "0",
+                       "display": "flex", "flexDirection": "column",
+                       "borderRight": "1px solid #1e2534",
                        "boxSizing": "border-box"}}>
-            <div style={{"display": "flex", "alignItems": "baseline",
-                         "justifyContent": "space-between"}}>
-                <h1 style={{"fontSize": "18px", "letterSpacing": "0.12em",
-                            "margin": "0 0 4px 0"}}>{"ORGMEM"}</h1>
-                <Link to="/" style={{"fontSize": "11px", "opacity": "0.5",
-                                     "color": "#dbe3f0", "textDecoration": "none"}}>
-                    {"← about"}
-                </Link>
-            </div>
-            <p style={{"fontSize": "12px", "opacity": "0.55", "margin": "0 0 20px 0"}}>
-                {"who knows what · where it is written · where it is not"}
-            </p>
 
-            <form onSubmit={handle_submit}>
+            <div style={{"padding": "20px 22px 12px 22px",
+                         "borderBottom": "1px solid #1e2534"}}>
+                <div style={{"display": "flex", "alignItems": "baseline",
+                             "justifyContent": "space-between"}}>
+                    <h1 style={{"fontSize": "18px", "letterSpacing": "0.12em",
+                                "margin": "0 0 4px 0"}}>{"ORGMEM"}</h1>
+                    <Link to="/" style={{"fontSize": "11px", "opacity": "0.5",
+                                         "color": "#dbe3f0", "textDecoration": "none"}}>
+                        {"← about"}
+                    </Link>
+                </div>
+                <p style={{"fontSize": "12px", "opacity": "0.55", "margin": "0"}}>
+                    {"ask in english · answered by a walker, not a model"}
+                </p>
+            </div>
+
+            <div style={{"flex": "1", "overflowY": "auto", "padding": "18px 22px"}}>
+                {if len(thread) == 0 {
+                    <div>
+                        <p style={{"fontSize": "12px", "opacity": "0.5",
+                                   "margin": "0 0 12px 0", "lineHeight": "1.5"}}>
+                            {"Every answer below is a graph traversal. Ask one of these, or type your own — the same parser handles both."}
+                        </p>
+                        {for c in CHIPS {
+                            <ChipButton key={c} label={c} onSend={onSend} />
+                        }}
+                    </div>
+                }}
+
+                {for (i, m) in enumerate(thread) {
+                    <Bubble key={str(i)} msg={m} />
+                }}
+
+                {if busy {
+                    <p style={{"fontSize": "12px", "opacity": "0.6",
+                               "margin": "8px 0"}}>{"walking the graph…"}</p>
+                }}
+
+                {if last_no and not busy {
+                    <div style={{"marginTop": "6px"}}>
+                        <p style={{"fontSize": "10px", "letterSpacing": "0.1em",
+                                   "opacity": "0.4", "margin": "0 0 6px 0"}}>
+                            {"FOLLOW UP"}
+                        </p>
+                        <ChipButton label={FOLLOWUP} onSend={onSend} />
+                    </div>
+                }}
+            </div>
+
+            <form onSubmit={handle_submit}
+                  style={{"padding": "14px 22px 18px 22px",
+                          "borderTop": "1px solid #1e2534"}}>
                 <input value={query} onChange={handle_query}
                        placeholder="Ask the graph…"
                        style={{"width": "100%", "boxSizing": "border-box",
-                               "padding": "10px 12px", "marginBottom": "6px",
+                               "padding": "11px 13px",
                                "background": "#0e131e", "color": "#dbe3f0",
                                "border": "1px solid #26304a", "borderRadius": "8px",
                                "fontSize": "13px", "outline": "none"}} />
             </form>
-            <p style={{"fontSize": "11px", "opacity": "0.45", "margin": "0 0 14px 0",
-                       "minHeight": "15px"}}>
-                {("↵ runs: " + label_for(matched)) if (query != "" and matched != "")
-                 else ("no walker matches that — try one below" if query != "" else "")}
-            </p>
-
-            {for p in PRESETS {
-                <PresetButton key={p["key"]} pkey={p["key"]} label={p["label"]}
-                              onAsk={onAsk} />
-            }}
-
-            <p style={{"fontSize": "12px", "opacity": "0.6", "marginTop": "18px",
-                       "minHeight": "16px"}}>
-                {"walking the graph…" if busy else ""}
-            </p>
-
-            {if verdict != "" {
-                <div style={{"marginTop": "8px", "paddingTop": "16px",
-                             "borderTop": "1px solid #1e2534"}}>
-                    <p style={{"fontSize": "12px", "opacity": "0.6",
-                               "margin": "0 0 8px 0"}}>{answer["title"]}</p>
-                    <p style={{"fontSize": "17px", "fontWeight": "600",
-                               "margin": "0 0 8px 0", "color": "#ffd166"}}>{verdict}</p>
-                    <p style={{"fontSize": "13px", "lineHeight": "1.55",
-                               "margin": "0 0 14px 0"}}>{answer["reason"]}</p>
-                    <p style={{"fontSize": "11px", "letterSpacing": "0.1em",
-                               "opacity": "0.5", "margin": "0 0 6px 0"}}>
-                        {"EVIDENCE · " + str(len(evidence)) + " shown"
-                         + ((" of " + str(len(raw_evidence))) if hidden > 0 else "")}
-                    </p>
-                    {for (i, ev) in enumerate(evidence) {
-                        <div key={str(i)}
-                             style={{"fontSize": "12px", "fontFamily": "ui-monospace, monospace",
-                                     "padding": "4px 0", "borderBottom": "1px solid #141a26",
-                                     "opacity": "0.85"}}>{ev}</div>
-                    }}
-                </div>
-            }}
         </aside>
 
         <section style={{"flex": "1", "position": "relative"}}>
@@ -217,15 +184,71 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
     </div>;
 }
 
-def:pub PresetButton(pkey: str, label: str, onAsk: Callable[[str], None]) -> JsxElement {
+
+def:pub ChipButton(label: str, onSend: Callable[[str], None]) -> JsxElement {
     def handle(e: MouseEvent) {
-        onAsk(pkey);
+        onSend(label);
     }
     return <button onClick={handle}
                    style={{"display": "block", "width": "100%", "textAlign": "left",
-                           "padding": "10px 12px", "marginBottom": "8px",
+                           "padding": "9px 11px", "marginBottom": "8px",
                            "background": "#131824", "color": "#dbe3f0",
                            "border": "1px solid #26304a", "borderRadius": "8px",
-                           "fontSize": "13px", "lineHeight": "1.4",
+                           "fontSize": "12px", "lineHeight": "1.4",
                            "cursor": "pointer"}}>{label}</button>;
+}
+
+
+# One turn. A user turn is the sentence; an assistant turn is the walker's
+# verdict, the sentence the answer resolves to, its citations, and the walker
+# call it came from.
+def:pub Bubble(msg: dict[str, any]) -> JsxElement {
+    role: str = msg["role"] as str;
+    if role == "user" {
+        return <div style={{"marginBottom": "16px", "display": "flex",
+                            "justifyContent": "flex-end"}}>
+            <div style={{"maxWidth": "88%", "padding": "8px 11px",
+                         "borderRadius": "10px", "background": "#1c2740",
+                         "fontSize": "13px", "lineHeight": "1.45"}}>
+                {msg["text"]}
+            </div>
+        </div>;
+    }
+
+    verdict: str = (msg["verdict"] as str) if msg["verdict"] else "";
+    evidence: list[str] = dedupe((msg["evidence"] as list) if msg["evidence"] else []);
+
+    return <div style={{"marginBottom": "20px"}}>
+        {if verdict != "" {
+            <p style={{"fontSize": "16px", "fontWeight": "600",
+                       "margin": "0 0 6px 0", "color": "#ffd166"}}>{verdict}</p>
+        }}
+        <p style={{"fontSize": "13px", "lineHeight": "1.55", "margin": "0 0 8px 0"}}>
+            {msg["text"]}
+        </p>
+        {if msg["reason"] {
+            <p style={{"fontSize": "11px", "lineHeight": "1.5", "opacity": "0.55",
+                       "margin": "0 0 10px 0"}}>{msg["reason"]}</p>
+        }}
+        {if len(evidence) > 0 {
+            <div>
+                <p style={{"fontSize": "10px", "letterSpacing": "0.1em",
+                           "opacity": "0.4", "margin": "0 0 4px 0"}}>{"CITED"}</p>
+                {for (i, ev) in enumerate(evidence) {
+                    <div key={str(i)}
+                         style={{"fontSize": "11px",
+                                 "fontFamily": "ui-monospace, monospace",
+                                 "padding": "3px 0", "opacity": "0.8",
+                                 "borderBottom": "1px solid #141a26"}}>{ev}</div>
+                }}
+            </div>
+        }}
+        {if msg["route"] {
+            <p style={{"fontSize": "10px", "fontFamily": "ui-monospace, monospace",
+                       "opacity": "0.45", "margin": "10px 0 0 0",
+                       "wordBreak": "break-all"}}>
+                {"↳ " + (msg["route"] as str)}
+            </p>
+        }}
+    </div>;
 }

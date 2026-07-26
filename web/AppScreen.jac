@@ -35,7 +35,7 @@ walker while the audience is trying to follow a token across it.
 """
 
 import from react { useEffect }
-sv import from ..api { graph_data, ask, node_card }
+sv import from ..api { graph_data, ask, node_card, chat }
 import from .Shell { Shell }
 import from .GraphCanvas { SpeedButton }
 
@@ -222,6 +222,25 @@ def:pub AppScreen -> JsxElement {
     has loading: bool = False;
     has attempt: int = 0;
 
+    # The conversation, and the one piece of state that carries between turns:
+    # the subject the last answer established. `ctx` is what lets "who would be
+    # the best person to do it?" mean anything — the server has no session, so
+    # the client hands the subject back with every question.
+    has thread: list[dict[str, any]] = [];
+    has ctx: str = "";
+
+    # The answer is held back until the walk that produced it has finished
+    # crossing the graph. Without this the verdict lands the instant the RPC
+    # returns and the animation plays under an answer the audience has already
+    # read, which reads as decoration rather than as the derivation.
+    #
+    # `reveal` is a counter bumped by the playback timer when it runs out of
+    # hops, NOT a test on `step`. Testing `step >= len(path)` in an effect races
+    # the timer's own `step = 0`: both run in the same commit, and the reveal
+    # would see the PREVIOUS walk's final step and fire immediately.
+    has pending: dict[str, any] = {};
+    has reveal: int = 0;
+
     # Playback speed for the walk, as a multiplier on HOP_MS. Changing it
     # restarts the reveal from step 0 — the interval is keyed on it — which is
     # the behaviour you want on stage: pick a pace, replay the walk at it.
@@ -255,10 +274,37 @@ def:pub AppScreen -> JsxElement {
         active = hl;
     }
 
-    async def run_preset(preset: str) {
+    # One turn of the conversation. The server resolves the sentence to a
+    # walker and spawns it; everything the pane shows — verdict, citations, the
+    # walk on the canvas — comes back out of that traversal.
+    #
+    # `ctx_domain` is the entire conversation state the server needs: the
+    # subject the last answer established, so a bare follow-up ("who would be
+    # the best person to do it?") has something to rank. It is threaded through
+    # a local of that exact name because the RPC turns the CALLER's variable
+    # names into the JSON keys.
+    async def send(text: str) {
+        if busy {
+            return;
+        }
         busy = True;
-        answer = await ask(preset);
-        busy = False;
+        thread = thread + [{"role": "user", "text": text, "verdict": "",
+                            "reason": "", "evidence": [], "route": ""}];
+        ctx_domain: str = ctx;
+        a: dict[str, any] = await chat(text, ctx_domain);
+        if not a {
+            busy = False;
+            return;
+        }
+        answer = a;
+        ctx = (a["ctx_domain"] as str) if a["ctx_domain"] else ctx;
+        # Parked, not appended. Setting `answer` above starts the walk; the
+        # effect below posts this once the walk arrives. `busy` deliberately
+        # stays True for the whole walk, which is what keeps "walking the
+        # graph…" on screen until there is something to show.
+        pending = {"role": "bot", "text": a["say"], "verdict": a["verdict"],
+                   "reason": a["reason"], "evidence": a["evidence"],
+                   "route": a["route"]};
     }
 
     # Clicking a dot opens the artifact it stands for. The anchor is set before
@@ -352,6 +398,9 @@ def:pub AppScreen -> JsxElement {
         total = len(answer["path"] as list);
         step = 0;
         if total == 0 {
+            # An answer with no route to animate — a clarification, an unknown
+            # subsystem — has nothing to wait for, so it lands immediately.
+            reveal = reveal + 1;
             return lambda {  };
         }
         # Felix's cone is 120 edges wide — one edge per tick would run for 45
@@ -365,10 +414,24 @@ def:pub AppScreen -> JsxElement {
             step = counter[0] * chunk;
             if counter[0] * chunk >= total {
                 clearInterval(handles[0]);
+                reveal = reveal + 1;
             }
         }, HOP_MS / speed);
         return lambda { clearInterval(handles[0]); };
     }, [answer, speed]);
+
+    # The walk has arrived, so the answer can be spoken. Keyed on `reveal`
+    # alone: it only ever changes when a walk runs out of hops, so this cannot
+    # fire early. `pending["role"]` rather than a length test — `{}` is truthy
+    # in JS and `len()` on a client-side object is undefined.
+    useEffect(lambda {
+        if pending["role"] {
+            thread = thread + [pending];
+            pending = {};
+            busy = False;
+        }
+        return lambda {  };
+    }, [reveal]);
 
     def set_speed(m: float) {
         speed = m;
@@ -379,9 +442,17 @@ def:pub AppScreen -> JsxElement {
     # and `view` (which collapses back to `graph` because `merge_walk` sees an
     # empty route). Deliberately does NOT touch `graph` or `cap` — refetching
     # the slice would reshuffle a layout the audience has already learned.
+    # Also empties the conversation, which is what puts the prefilled questions
+    # back — one button to reset the stage between runs.
     def clear_walk {
         answer = BLANK;
         step = 0;
+        thread = [];
+        ctx = "";
+        # An answer parked mid-walk would otherwise post into the next
+        # conversation the moment a walk finishes.
+        pending = {};
+        busy = False;
     }
 
     vnodes: list = (view["nodes"] as list) if (view and view["nodes"]) else [];
@@ -391,7 +462,7 @@ def:pub AppScreen -> JsxElement {
         <Shell answer={answer} busy={busy} graph={view}
                active={active} walked={walked}
                hops_done={step} hops_total={len(path)}
-               onAsk={run_preset}
+               thread={thread} onSend={send}
                card={card} cx={cx} cy={cy}
                onNodeClick={open_card} onOpenRef={open_ref}
                onCloseCard={close_card} />

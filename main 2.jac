@@ -954,12 +954,6 @@ walker :pub GraphSlice {
 
 # ---------------------------------------------------------------- 2. Visibility
 
-# Max edges recorded per source node for the canvas animation. Display only —
-# see `Visibility.hop`. 5 keeps a walk under ~40 nodes, which reads as a route
-# on a projector; 120 (the old uncapped fan) read as a gold blob.
-glob FAN_MAX: int = 5;
-
-
 walker :pub Visibility {
     has actor: str = "";
     has as_of_day: int = 60;
@@ -969,8 +963,6 @@ walker :pub Visibility {
 
     has cone: list[str] = [];
     has path: list[list] = [];
-    has fan: dict[str, int] = {};
-    has linked: dict[str, bool] = {};
     has blocked: list[str] = [];
     has seen: dict[str, bool] = {};
     has ok: bool = True;
@@ -993,42 +985,11 @@ walker :pub Visibility {
         }
         p: Person = PEOPLE[self.actor];
         self.seen[p.gid] = True;
-        # The actor is the one node that is linked by definition — it is where
-        # the route starts, so `hop` has a root to grow the tree from.
-        self.linked[p.gid] = True;
         visit p;
     }
 
     # From a person: everything they wrote, and every event they were in.
-    #
-    # Channels are traversed FIRST, and the order is load-bearing for the
-    # display only. The authored artifacts are a flat person->artifact fan; the
-    # channels are the one branch with real depth under them. Running authored
-    # first spent the person's whole edge budget on depth-1 spokes and the walk
-    # flattened back to a star. Membership of `cone` — and therefore the
-    # verdict — is unaffected: an artifact reachable both ways is admitted once
-    # whichever arm reaches it first, so the set is identical either way.
     can at_person with Person entry {
-        # Public channels this person posts in. Anything said in a room you are
-        # in reaches you through normal channels, whether or not you replied —
-        # this is what "would they have learned about it" actually means.
-        #
-        # The channel is recorded as its own hop. Attributing these artifacts
-        # straight to the person (the old behaviour) threw away the only
-        # intermediate node in the route, which is why every recorded pair
-        # shared one source and the walk had no second hop to show. Reading
-        # `person -> #qa_support -> thread -> the page it cites` is the claim
-        # this demo is making; `person -> thread` was not.
-        if self.use_channels {
-            for ch in [here ->:Subscribes:->] {
-                self.hop(str(here.gid), str(ch.gid));
-                for a in [ch <-:InChannel:<-] {
-                    if self.admit(a, str(ch.gid)) {
-                        visit a;
-                    }
-                }
-            }
-        }
         for a in [here ->:Authored:->] {
             if self.admit(a, here.gid) {
                 visit a;
@@ -1042,8 +1003,22 @@ walker :pub Visibility {
                 continue;
             }
             self.seen[e.gid] = True;
-            self.hop(str(here.gid), str(e.gid));
+            if len(self.path) < 200 {
+                self.path.append([here.gid, e.gid]);
+            }
             visit e;
+        }
+        # Public channels this person posts in. Anything said in a room you are
+        # in reaches you through normal channels, whether or not you replied —
+        # this is what "would they have learned about it" actually means.
+        if self.use_channels {
+            for ch in [here ->:Subscribes:->] {
+                for a in [ch <-:InChannel:<-] {
+                    if self.admit(a, here.gid) {
+                        visit a;
+                    }
+                }
+            }
         }
     }
 
@@ -1075,38 +1050,6 @@ walker :pub Visibility {
         }
     }
 
-    # Records ONE edge for the canvas to animate. Traversal is deliberately NOT
-    # affected by this: `cone` — which decides the verdict — is built in
-    # `admit` regardless of whether the hop was recorded, so capping breadth
-    # here cannot move an eval score.
-    #
-    # The cap is the whole point. A person reaches ~120 artifacts in one step,
-    # and recording all of them produced a 120-spoke star: every pair shared
-    # the same source, so the "walk" was one hop replayed 16 times and 30% of
-    # the canvas turned gold. Capping the fan per source makes BFS render as a
-    # tree that goes DEEP instead of wide, which is what reads as traversal.
-    # `linked` is what keeps this a TREE rather than a forest. Without it the
-    # cap orphans whole subtrees: once the person's 5 slots are spent, the
-    # remaining channels never get their connecting edge, but their artifacts
-    # still record `channel -> artifact` — measured as 35 distinct sources of
-    # which only 6 were reachable from the actor. A route the audience cannot
-    # trace back to the person it started at is not a route.
-    def hop(src: str, dst: str) {
-        if len(self.path) >= 200 {
-            return;
-        }
-        if src not in self.linked {
-            return;
-        }
-        n: int = self.fan[src] if src in self.fan else 0;
-        if n >= FAN_MAX {
-            return;
-        }
-        self.fan[src] = n + 1;
-        self.linked[dst] = True;
-        self.path.append([src, dst]);
-    }
-
     # Time + access gate. Records the edge walked, for the frontend animation.
     def admit(a: any, src: str) -> bool {
         if a.gid in self.seen {
@@ -1125,7 +1068,9 @@ walker :pub Visibility {
             return False;
         }
         self.seen[a.gid] = True;
-        self.hop(src, a.gid);
+        if len(self.path) < 200 {
+            self.path.append([src, a.gid]);
+        }
         return True;
     }
 
@@ -1228,7 +1173,6 @@ walker :pub Visibility {
         # The walker's own `has` fields are echoed back in the HTTP envelope;
         # drop the traversal bookkeeping so the response stays small.
         self.seen = {};
-        self.fan = {};
         report {
             "actor": self.actor,
             "as_of_day": self.as_of_day,
@@ -1257,7 +1201,6 @@ walker :pub GapScan {
 
     has searched: list[str] = [];
     has found: list[str] = [];
-    has path: list[list] = [];
     has domains: list[str] = [];
     has seen: dict[str, bool] = {};
     has lo: int = 0;
@@ -1296,14 +1239,14 @@ walker :pub GapScan {
             }
             for a in [here ->:Produced:->] {
                 self.consider(a);
-                if self.admit(str(a.gid), str(here.gid)) { visit a; }
+                if self.admit(str(a.gid)) { visit a; }
             }
             return;
         }
         self.consider(here);
         for a in [here ->:Produced:->] {
             self.consider(a);
-            if self.admit(str(a.gid), str(here.gid)) { visit a; }
+            if self.admit(str(a.gid)) { visit a; }
         }
     }
 
@@ -1312,36 +1255,26 @@ walker :pub GapScan {
     can at_artifact with Artifact entry {
         for a in [here ->:Refs:->] {
             self.consider(a);
-            if self.admit(str(a.gid), str(here.gid)) { visit a; }
+            if self.admit(str(a.gid)) { visit a; }
         }
         for a in [here <-:Refs:<-] {
             self.consider(a);
-            if self.admit(str(a.gid), str(here.gid)) { visit a; }
+            if self.admit(str(a.gid)) { visit a; }
         }
         for e in [here <-:Produced:<-] {
             if e.day >= self.lo and e.day <= self.hi {
                 self.consider(e);
-                if self.admit(str(e.gid), str(here.gid)) { visit e; }
+                if self.admit(str(e.gid)) { visit e; }
             }
         }
     }
 
-    # Gate a node into the walk exactly once, under the size cap. `src` is
-    # recorded only so the canvas can animate the search; it has no effect on
-    # `searched`, `found`, or the verdict.
-    #
-    # Animating this one matters more than it looks. The SILENCE claim is that
-    # the space is CLOSED — watching the walker exhaust a small bounded region
-    # and come back with nothing is the argument. A verdict that appears
-    # without a visible search just looks like a lookup that failed.
-    def admit(gid: str, src: str) -> bool {
+    # Gate a node into the walk exactly once, under the size cap.
+    def admit(gid: str) -> bool {
         if gid in self.seen or len(self.seen) >= self.max_nodes {
             return False;
         }
         self.seen[gid] = True;
-        if len(self.path) < 200 {
-            self.path.append([src, gid]);
-        }
         return True;
     }
 
@@ -1394,8 +1327,7 @@ walker :pub GapScan {
             "searched": self.searched[:300],
             "searched_count": len(self.searched),
             "window_days": self.window_days,
-            "reason": reason,
-            "path": self.path[:120]
+            "reason": reason
         };
     }
 }
@@ -1415,8 +1347,6 @@ walker :pub WhoKnows {
     has specs: dict[str, int] = {};
     has departed: list[dict[str, any]] = [];
     has people: list[any] = [];
-    has path: list[list] = [];
-    has lit: dict[str, bool] = {};
     has bus_factor: int = 0;
     has doc_status: str = "UNDOCUMENTED";
     has ok: bool = True;
@@ -1441,16 +1371,9 @@ walker :pub WhoKnows {
                 "departed_day": p.departed_day
             });
         }
-        # Record domain -> artifact for the canvas. Capped, because TitanDB is
-        # mentioned by 214 artifacts and lighting all of them is a blob rather
-        # than a route. Scoring below is unaffected — it iterates the full set.
         for a in [here <-:Mentions:<-] {
             if a.day > self.as_of_day {
                 continue;
-            }
-            if len(self.path) < FAN_MAX {
-                self.path.append([str(here.gid), str(a.gid)]);
-                self.lit[str(a.gid)] = True;
             }
             visit a;
         }
@@ -1470,12 +1393,6 @@ walker :pub WhoKnows {
         w: float = kw * (0.5 ** (age / 30.0));
         for p in [here <-:Authored:<-] {
             pn: str = str(p.name);
-            # Second display hop: artifact -> its author. Only from artifacts
-            # that were themselves recorded, so the route stays a connected
-            # tree rooted at the domain rather than a scatter of pairs.
-            if str(here.gid) in self.lit {
-                self.path.append([str(here.gid), pn]);
-            }
             self.score[pn] = self.score.get(pn, 0.0) + w;
             self.counts[pn] = self.counts.get(pn, 0) + 1;
             if here.kind == "ConfluencePage" {
@@ -1538,59 +1455,7 @@ walker :pub WhoKnows {
             "bus_factor_rule": "still-employed people scoring >= 50% of the top contributor",
             "doc_status": status,
             "evidence_by_type": self.kinds,
-            "as_of_day": self.as_of_day,
-            "path": self.path[:120]
-        };
-    }
-}
-
-
-# --------------------------------------------------------- 4b. Inherited
-
-# "Nobody onboarded the new hire — so whose work did they inherit?"
-#
-# The chat pane's follow-up question ("who would be the best person to do it?")
-# needs a SUBJECT, and the honest way to find one is structural rather than
-# guessed: the most recent departure before the hire, and the domains that left
-# with that person. `DepartedWith` is only drawn where the departed person
-# actually owned evidence in the domain, so this is a record of what walked out
-# of the door, not an assumption about who was supposed to hand over to whom.
-walker :pub Inherited {
-    has before_day: int = 60;
-
-    has name: str = "";
-    has day: int = -1;
-    has documented_pct: float = -1.0;
-    has domains: list[str] = [];
-
-    can start with Root entry { visit HUB; }
-
-    can begin with Hub entry {
-        # Ranked by how little of the knowledge was written down, NOT by
-        # `departed_day`. That column does not survive ingest intact — Bill
-        # comes back as day -579 — so ordering on it would silently pick the
-        # wrong person. Having a `DepartedWith` edge at all is the reliable
-        # signal that someone left holding something; `documented_pct` is the
-        # reliable measure of how much of it left with them.
-        worst: float = 2.0;
-        for (nm, p) in PEOPLE.items() {
-            doms: list[str] = [str(d.name) for d in [p ->:DepartedWith:->]];
-            if not doms {
-                continue;
-            }
-            pct: float = float(p.documented_pct);
-            if pct < 0.0 or pct >= worst {
-                continue;
-            }
-            worst = pct;
-            self.name = str(p.name);
-            self.day = int(p.departed_day);
-            self.documented_pct = pct;
-            self.domains = doms;
-        }
-        report {
-            "name": self.name, "departed_day": self.day,
-            "documented_pct": self.documented_pct, "domains": self.domains
+            "as_of_day": self.as_of_day
         };
     }
 }
