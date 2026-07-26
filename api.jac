@@ -22,7 +22,7 @@ import os;
 import json;
 import urllib.request;
 import from http { HTTPMethod }
-import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand, NodeCard, Inherited, EventSearch }
+import from main { GraphSlice, Visibility, GapScan, WhoKnows, Expand, NodeCard, Inherited, EventSearch, PathBetween, Bottlenecks }
 
 glob HERE: str = os.path.dirname(os.path.abspath(__file__));
 
@@ -845,7 +845,9 @@ glob TOOLS: list[dict[str, any]] = [
         "name": "find_event",
         "description": "Resolve a described event to its id. All filters optional and ANDed. Returns an empty list when nothing matches — never guess an id, always resolve it here first.",
         "parameters": {"type": "object", "properties": {
-            "day": {"type": "integer", "description": "day 0-60, omit for any"},
+            "day": {"type": "integer", "description": "one exact day, 0-60"},
+            "day_from": {"type": "integer", "description": "start of a day range, inclusive"},
+            "day_to": {"type": "integer", "description": "end of a day range, inclusive"},
             "event_type": {"type": "string", "description": "substring match, e.g. 'incident' matches incident_opened"},
             "actor": {"type": "string", "description": "a person involved, substring match"}
         }}}},
@@ -870,6 +872,20 @@ glob TOOLS: list[dict[str, any]] = [
             "as_of_day": {"type": "integer"},
             "event_id": {"type": "string"}
         }, "required": ["person", "as_of_day", "event_id"]}}},
+    {"type": "function", "function": {
+        "name": "bottlenecks",
+        "description": "Which subsystems are one departure away from being lost — every domain whose bus factor is at or below a threshold, worst first, with who still holds it and who already left holding it. Use for any question about risk, fragility, single points of failure, or where the org is exposed.",
+        "parameters": {"type": "object", "properties": {
+            "max_bus": {"type": "integer", "description": "bus-factor threshold, default 2"}
+        }}}},
+    {"type": "function", "function": {
+        "name": "path_between",
+        "description": "The shortest chain of named relationships connecting two nodes, or a statement that none exists within the hop limit. This is the question a search index cannot answer: not 'are these similar' but 'how, concretely, are these two things connected'.",
+        "parameters": {"type": "object", "properties": {
+            "a": {"type": "string", "description": "a node id — a person's name works"},
+            "b": {"type": "string"},
+            "max_depth": {"type": "integer", "description": "hop limit, default 6"}
+        }, "required": ["a", "b"]}}},
     {"type": "function", "function": {
         "name": "describe_node",
         "description": "Structural facts about any node: its kind, day, authors, the domains it mentions, and what it references. Returns METADATA ONLY — never the text of an artifact, which this system deliberately cannot give you.",
@@ -949,7 +965,10 @@ def run_tool(name: str, args: dict[str, any]) -> dict[str, any] {
         day: int = int(args["day"]) if "day" in args else -1;
         et: str = str(args["event_type"]) if "event_type" in args else "";
         who: str = str(args["actor"]) if "actor" in args else "";
-        r = root spawn EventSearch(day=day, event_type=et, actor=who, limit=12);
+        d_from: int = int(args["day_from"]) if "day_from" in args else -1;
+        d_to: int = int(args["day_to"]) if "day_to" in args else -1;
+        r = root spawn EventSearch(day=day, day_from=d_from, day_to=d_to,
+                                   event_type=et, actor=who, limit=12);
         if not r.reports {
             return {"result": {"count": 0, "events": []}, "answer": {}};
         }
@@ -985,6 +1004,62 @@ def run_tool(name: str, args: dict[str, any]) -> dict[str, any] {
         return {"result": {"could_have_known": "YES" in str(a3["verdict"]),
                            "reason": a3["reason"]},
                 "answer": a3};
+    }
+    if name == "bottlenecks" {
+        mb: int = int(args["max_bus"]) if "max_bus" in args else 2;
+        br = root spawn Bottlenecks(max_bus=mb, as_of_day=60);
+        if not br.reports {
+            return {"result": {"count": 0, "domains": []}, "answer": {}};
+        }
+        # The inner WhoKnows walkers report into the SAME list, so reports[0]
+        # is one of theirs, not the aggregate. Pick the report that carries the
+        # summary key rather than trusting position.
+        bp: dict[str, any] = {};
+        for rep in br.reports {
+            rd: dict[str, any] = rep;
+            if "threshold" in rd {
+                bp = rd;
+            }
+        }
+        if not bp {
+            return {"result": {"count": 0, "domains": []}, "answer": {}};
+        }
+        rows: list[any] = bp["domains"] as list;
+        bans: dict[str, any] = empty_answer();
+        bans["title"] = f"Subsystems with a bus factor of {mb} or less";
+        bans["verdict"] = f"{len(rows)} subsystem(s) at risk";
+        bans["reason"] = "Bus factor is the number of current employees with real evidence in the subsystem — not mentions, but weight of what they wrote, decayed on a 30-day half-life.";
+        bans["evidence"] = [
+            f"{r['domain']} — bus factor {r['bus_factor']}, {r['doc_status']}"
+            + (f", held by {', '.join(r['still_here'])}" if r["still_here"] else ", nobody current")
+            for r in rows
+        ];
+        bans["highlight"] = [str(r["domain"]) for r in rows];
+        return {"result": bp, "answer": bans if rows else {}};
+    }
+    if name == "path_between" {
+        pa: str = str(args["a"]) if "a" in args else "";
+        pb: str = str(args["b"]) if "b" in args else "";
+        md: int = int(args["max_depth"]) if "max_depth" in args else 6;
+        pr = root spawn PathBetween(a=pa, b=pb, max_depth=md);
+        if not pr.reports {
+            return {"result": {"found": False}, "answer": {}};
+        }
+        pp: dict[str, any] = pr.reports[0];
+        # The chain is handed to the canvas as a walk, so a connection the
+        # agent describes in words is also drawn as a route across the graph.
+        hops: list[list[str]] = [[str(h["from"]), str(h["to"])]
+                                 for h in (pp["path"] as list)];
+        ans: dict[str, any] = empty_answer();
+        ans["title"] = f"How is {pa} connected to {pb}?";
+        ans["verdict"] = (f"connected in {len(hops)} hop(s)" if pp["found"]
+                          else "no route found");
+        ans["reason"] = str(pp["reason"]);
+        ans["evidence"] = [f"{h['from']} -{h['edge']}-> {h['to']}"
+                           for h in (pp["path"] as list)];
+        ans["path"] = hops;
+        ans["highlight"] = [str(h["to"]) for h in (pp["path"] as list)];
+        return {"result": pp, "answer": ans if hops else {}};
     }
     if name == "describe_node" {
         gid: str = str(args["gid"]) if "gid" in args else "";
@@ -1062,6 +1137,12 @@ def trace_note(name: str, res: dict[str, any]) -> str {
     }
     if name == "could_have_known" {
         return "reachable" if res["could_have_known"] else "not reachable";
+    }
+    if name == "bottlenecks" {
+        return str(res["count"]) + " subsystem(s) at or under the threshold";
+    }
+    if name == "path_between" {
+        return str(res["reason"]) if "reason" in res else "no route";
     }
     if name == "describe_node" {
         return (str(res["kind"]) + " · " + str(res["title"])[:40]) if res["kind"] else "unknown node";

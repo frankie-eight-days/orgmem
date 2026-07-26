@@ -1557,6 +1557,10 @@ walker :pub WhoKnows {
 # substring so "incident" finds "incident_opened".
 walker :pub EventSearch {
     has day: int = -1;
+    # A range, because "what happened in week three" was previously
+    # unaskable — `day` matches one exact day and nothing else.
+    has day_from: int = -1;
+    has day_to: int = -1;
     has event_type: str = "";
     has actor: str = "";
     has limit: int = 12;
@@ -1570,6 +1574,12 @@ walker :pub EventSearch {
         who: str = self.actor.lower();
         for (gid, e) in EVENTS.items() {
             if self.day >= 0 and int(e.day) != self.day {
+                continue;
+            }
+            if self.day_from >= 0 and int(e.day) < self.day_from {
+                continue;
+            }
+            if self.day_to >= 0 and int(e.day) > self.day_to {
                 continue;
             }
             if want and want not in str(e.event_type).lower() {
@@ -1597,6 +1607,191 @@ walker :pub EventSearch {
             });
         }
         report {"count": len(self.hits), "events": self.hits};
+    }
+}
+
+
+# ------------------------------------------------------- 4d. Bottlenecks
+
+# "Which subsystems are one resignation away from being lost?"
+#
+# The org-health question this whole graph exists to answer, and it is a fan-out
+# rather than a traversal: spawn the expertise ranking on every domain and keep
+# the ones whose bus factor is at or under the threshold. Nobody has to know
+# which subsystem to ask about — the graph volunteers the fragile ones.
+#
+# `quiet=True` on the inner walkers because their individual reports are not
+# wanted; only the aggregate is.
+walker :pub Bottlenecks {
+    has max_bus: int = 2;
+    has as_of_day: int = 60;
+
+    has rows: list[dict[str, any]] = [];
+
+    can start with Root entry { visit HUB; }
+
+    can begin with Hub entry {
+        for (nm, d) in DOMAINS.items() {
+            w: WhoKnows = HUB spawn WhoKnows(
+                domain=str(nm), as_of_day=self.as_of_day, limit=6
+            );
+            if not w.ok {
+                continue;
+            }
+            holders: list[str] = [];
+            for p in w.people {
+                if not p["departed"] and len(holders) < 4 {
+                    holders.append(str(p["name"]));
+                }
+            }
+            gone: list[str] = [str(x["name"]) for x in w.departed];
+            if w.bus_factor <= self.max_bus {
+                self.rows.append({
+                    "domain": str(nm),
+                    "bus_factor": int(w.bus_factor),
+                    "doc_status": str(w.doc_status),
+                    "still_here": holders,
+                    "departed_holders": gone[:4]
+                });
+            }
+        }
+        # Most fragile first, so the answer leads with the worst case. Bucketed
+        # rather than sorted with a key function: the range is 0..max_bus and
+        # tuple-sorting would compare the dicts on ties.
+        ordered: list[dict[str, any]] = [];
+        b: int = 0;
+        while b <= self.max_bus {
+            for r in self.rows {
+                if int(r["bus_factor"]) == b {
+                    ordered.append(r);
+                }
+            }
+            b += 1;
+        }
+        self.rows = ordered;
+        report {"threshold": self.max_bus, "count": len(self.rows),
+                "domains": self.rows};
+    }
+}
+
+
+# ------------------------------------------------------- 4c. PathBetween
+
+# Any node by id, across all six registries. The agent hands us ids it got
+# from other tools, and it should not have to know which bucket one lives in.
+def find_node(gid: str) -> any {
+    if gid in PEOPLE { return PEOPLE[gid]; }
+    if gid in EVENTS { return EVENTS[gid]; }
+    if gid in ARTS { return ARTS[gid]; }
+    if gid in DOMAINS { return DOMAINS[gid]; }
+    if gid in DEPTS { return DEPTS[gid]; }
+    if gid in CHANNELS { return CHANNELS[gid]; }
+    return None;
+}
+
+
+# "How is X connected to Y?" — the question a graph answers and a search index
+# cannot. Breadth-first from both ids over undirected edges, reporting the
+# SHORTEST route and the edge names along it, so the answer is a chain of
+# named relationships rather than a similarity score.
+#
+# BFS is written out with an explicit frontier rather than `visit`, because a
+# walker queue cannot be stopped the moment the target is reached — and the
+# whole point is the shortest path, not every path.
+walker :pub PathBetween {
+    has a: str = "";
+    has b: str = "";
+    has max_depth: int = 6;
+
+    has hops: list[dict[str, any]] = [];
+    has found: bool = False;
+    has scanned: int = 0;
+    has note: str = "";
+
+    can start with Root entry { visit HUB; }
+
+    can begin with Hub entry {
+        src: any = find_node(self.a);
+        dst: any = find_node(self.b);
+        if src is None or dst is None {
+            missing: str = self.a if src is None else self.b;
+            self.note = f"no node with id '{missing}'";
+            report {"found": False, "reason": self.note, "path": []};
+            return;
+        }
+        if self.a == self.b {
+            self.note = "same node";
+            report {"found": True, "reason": self.note, "path": []};
+            return;
+        }
+
+        parent: dict[str, str] = {};
+        via: dict[str, str] = {};
+        seen: dict[str, bool] = {self.a: True};
+        frontier: list[any] = [src];
+        depth: int = 0;
+
+        while frontier and depth < self.max_depth and not self.found {
+            depth += 1;
+            nxt: list[any] = [];
+            for n in frontier {
+                # Endpoints are read off the edge anchor, the same way
+                # `out_edges` does it — `e.source`/`e.target` are not the
+                # accessors and raise at runtime.
+                cand: list[any] = [];
+                for e in [edge n-->] {
+                    cand.append([e, e.__jac__.target.archetype]);
+                }
+                for e2 in [edge n<--] {
+                    cand.append([e2, e2.__jac__.source.archetype]);
+                }
+                for pairv in cand {
+                    ed: any = pairv[0];
+                    m: any = pairv[1];
+                    if not isinstance(m, Ent) {
+                        continue;
+                    }
+                    g: str = str(m.gid);
+                    if g in seen {
+                        continue;
+                    }
+                    seen[g] = True;
+                    self.scanned += 1;
+                    parent[g] = str(n.gid);
+                    via[g] = str(type(ed).__name__);
+                    if g == self.b {
+                        self.found = True;
+                        break;
+                    }
+                    nxt.append(m);
+                }
+                if self.found {
+                    break;
+                }
+            }
+            frontier = nxt;
+        }
+
+        if not self.found {
+            self.note = f"no route within {self.max_depth} hops; {self.scanned} nodes examined";
+            report {"found": False, "reason": self.note, "path": [],
+                    "scanned": self.scanned};
+            return;
+        }
+
+        # Walk the parent chain back from the target, then reverse it.
+        chain: list[dict[str, any]] = [];
+        cur: str = self.b;
+        while cur != self.a {
+            p: str = parent[cur];
+            chain.append({"from": p, "edge": via[cur], "to": cur});
+            cur = p;
+        }
+        chain.reverse();
+        self.hops = chain;
+        self.note = f"{len(chain)} hop(s), found after examining {self.scanned} nodes";
+        report {"found": True, "reason": self.note, "path": chain,
+                "scanned": self.scanned};
     }
 }
 
