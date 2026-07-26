@@ -201,6 +201,56 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
 }
 
 
+# The model answers in markdown and HTML collapses newlines, so a five-item
+# tool list arrived as one run-on paragraph with stray backticks and asterisks
+# in it. This is the smallest renderer that fixes it honestly: lines, bullets,
+# and one inline emphasis style.
+#
+# `**bold**` is normalised to backticks rather than given its own style. Every
+# bold span the model actually emits is a tool or field name — the same thing
+# the backticks mark — so collapsing them to one treatment is more consistent
+# than honouring both, and halves the parsing.
+def:pub Rich(text: str, dim: bool = False) -> JsxElement {
+    lines: list[str] = text.replace("**", "`").split("\n");
+    return <div>
+        {for (i, raw) in enumerate(lines) {
+            <RichLine key={str(i)} raw={raw} dim={dim} />
+        }}
+    </div>;
+}
+
+
+def:pub RichLine(raw: str, dim: bool = False) -> JsxElement {
+    line: str = raw.strip();
+    if line == "" {
+        return <div style={{"height": "8px"}} />;
+    }
+
+    bullet: bool = line.startswith("- ") or line.startswith("* ");
+    body: str = line[2:] if bullet else line;
+
+    # Odd indices are what sat between a pair of backticks.
+    parts: list[str] = body.split("`");
+
+    return <div style={{"display": "flex", "gap": "7px",
+                        "margin": "0 0 5px 0",
+                        "fontSize": "13px", "lineHeight": "1.5",
+                        "opacity": "0.55" if dim else "1"}}>
+        {if bullet {
+            <span style={{"color": "#7fb2ff", "flexShrink": "0"}}>{"·"}</span>
+        }}
+        <span>
+            {for (j, p) in enumerate(parts) {
+                <span key={str(j)}
+                      style={{"fontFamily": "ui-monospace, monospace",
+                              "color": "#9ecbff", "fontSize": "12px"}
+                             if j % 2 == 1 else {}}>{p}</span>
+            }}
+        </span>
+    </div>;
+}
+
+
 def:pub ChipButton(label: str, onSend: Callable[[str], None]) -> JsxElement {
     def handle(e: MouseEvent) {
         onSend(label);
@@ -264,12 +314,15 @@ def:pub Bubble(msg: dict[str, any], onSend: Callable[[str], None]) -> JsxElement
             <p style={{"fontSize": "16px", "fontWeight": "600",
                        "margin": "0 0 6px 0", "color": "#ffd166"}}>{verdict}</p>
         }}
-        <p style={{"fontSize": "13px", "lineHeight": "1.55", "margin": "0 0 8px 0"}}>
-            {msg["text"]}
-        </p>
+        <div style={{"margin": "0 0 10px 0"}}>
+            <Rich text={msg["text"] as str} dim={False} />
+        </div>
         {if msg["reason"] {
-            <p style={{"fontSize": "11px", "lineHeight": "1.5", "opacity": "0.55",
-                       "margin": "0 0 10px 0"}}>{msg["reason"]}</p>
+            <div style={{"margin": "0 0 10px 0",
+                         "paddingLeft": "10px",
+                         "borderLeft": "2px solid #1e2534"}}>
+                <Rich text={msg["reason"] as str} dim={True} />
+            </div>
         }}
         {if len(chips) > 0 {
             <div style={{"marginTop": "4px"}}>

@@ -1214,6 +1214,18 @@ def:pub agent_step(text: str, state: str) -> dict[str, any] {
 # The union of everything the walkers lit up, plus the headline rules. Shared
 # by `agent` and `agent_step` so the streamed and unstreamed paths cannot drift
 # apart in what they claim.
+# "0 walker(s) · 1 turn(s)" reads like a stub. This line is the receipt for the
+# answer above it, so it is worth spelling out.
+def route_line(walkers: int, turns: int) -> str {
+    t: str = f"{turns} turn" + ("" if turns == 1 else "s");
+    if walkers == 0 {
+        return f"answered from the tool definitions · no walker run · {t} · {KIMI_MODEL}";
+    }
+    w: str = f"{walkers} walker" + ("" if walkers == 1 else "s");
+    return f"{w} · {t} · {KIMI_MODEL}";
+}
+
+
 def assemble(text: str, answers: list[any], final: str, turns: int) -> dict[str, any] {
     path: list[list[str]] = [];
     hl: list[str] = [];
@@ -1249,7 +1261,7 @@ def assemble(text: str, answers: list[any], final: str, turns: int) -> dict[str,
         "title": text, "verdict": verdict, "reason": reason,
         "evidence": ev[:10], "highlight": hl, "path": path,
         "say": final, "chips": [], "ctx_domain": ctx,
-        "route": f"{len(answers)} walker(s) · {turns} turn(s) · {KIMI_MODEL}",
+        "route": route_line(len(answers), turns),
         "trace": []
     };
 }
