@@ -919,6 +919,7 @@ def agent_system -> str {
         + "- If you cannot resolve the trigger event, say you could not resolve it. Never turn that into a 'no'.\n"
         + "- You may call several tools in one turn to cover several events at once.\n"
         + "- Do not state anything a tool did not return. No hedging language about what might exist.\n"
+        + "- The earlier-conversation block, when present, exists ONLY to resolve pronouns and bare names. It is NOT a source of facts and you must never answer from it alone — re-run the tools for the new question, every time.\n"
         + "- Finish with ONE short sentence answering the question directly. No preamble, no bullet lists.\n"
         + "- EXCEPTION: if asked what you can do or which tools you have, call nothing. List the five tools, one short line each, and close by saying that you choose which tool to call but the walkers decide what is true — you cannot see an artifact's contents and cannot turn a proven absence into a maybe.\n"
         + "Subsystems in this graph: " + doms + "\n"

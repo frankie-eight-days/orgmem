@@ -14,6 +14,7 @@ same parser. They are prefilled questions, not a second code path — so a chip
 that works proves the typed version works too.
 """
 
+import from react { useEffect }
 import from "@jac/runtime" { Link }
 import from .GraphCanvas { GraphCanvas }
 import from .card.Card { Card }
@@ -85,6 +86,19 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
         last_no = (tail["role"] == "bot") and ("NO" in (tail["verdict"] as str));
     }
 
+    # Keep the newest turn in view. The trace streams in a tool call at a time
+    # and a twelve-way fan-out is taller than the pane, so without this the
+    # answer lands below the fold and the room watches a blank gap.
+    # Keyed on `live` too, not just `thread` — the growth happens DURING the
+    # turn, which is exactly when the thread has not changed.
+    useEffect(lambda {
+        el: any = document.getElementById("chat-scroll");
+        if el {
+            el.scrollTop = el.scrollHeight;
+        }
+        return lambda {  };
+    }, [thread, live, busy]);
+
     def handle_query(e: ChangeEvent) {
         query = e.target.value;
         # Grow the box to fit what has been typed. A `<textarea>` does not
@@ -148,7 +162,8 @@ def:pub Shell(answer: dict[str, any], busy: bool, graph: dict[str, any],
                 </p>
             </div>
 
-            <div style={{"flex": "1", "overflowY": "auto", "padding": "18px 22px"}}>
+            <div id="chat-scroll"
+                 style={{"flex": "1", "overflowY": "auto", "padding": "18px 22px"}}>
                 {if len(thread) == 0 {
                     <div>
                         <p style={{"fontSize": "12px", "opacity": "0.5",
