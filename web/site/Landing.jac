@@ -11,13 +11,18 @@ hidden content and nothing addressed to a grader.
 """
 
 import from .Hero { Hero }
+import from .Problem { Problem }
 import from .Transform { Transform }
+import from .Schema { Schema }
+import from .Mechanism { Mechanism, Cta }
+import from .Dataset { Dataset, Questions }
+import from .Unlocks { Proof }
 import from .styles { SITE_CSS }
 
 glob DESCRIPTION: str =
-    "orgmem maps organizational knowledge as a graph — who knows what, where "
-    "it's written, and where it isn't. 4,966 artifacts across six systems become "
-    "76,000+ typed edges in 6.4 seconds. Built in Jac.";
+    "Observability for organizations. orgmem maps who knows what, where it's "
+    "written, and where it isn't — as a graph you can walk. 4,966 artifacts "
+    "across six systems become 76,000+ typed edges in 6.4 seconds. Built in Jac.";
 
 glob JSONLD: str = """
 {
@@ -85,8 +90,30 @@ def:pub Landing() -> JsxElement {
         ld.textContent = JSONLD;
     }
 
+    # Zoom out, then in. A reader arriving here knows nothing about us, the
+    # dataset, or the problem, so nothing is claimed before the thing it is
+    # claimed about has been shown:
+    #
+    #   Dataset      here is a company and sixty days of its records
+    #   Problem      here is one message, and here is what it actually was
+    #   Questions    so here is what you would want to ask, and cannot
+    #   Transform    this is what we build from the records
+    #   Schema       these are the node and edge types
+    #   Mechanism    this is the walker that answers
+    #   Proof        this is how it scores, including what it declines
+    #   Cta          the way in
+    #
+    # `WhySearch` and `Unlocks` are commented out in their own files rather
+    # than deleted; their arguments are carried by `Problem` and `Questions`.
     return <main className="site">
         <Hero />
+        <Dataset />
+        <Problem />
+        <Questions />
         <Transform />
+        <Schema />
+        <Mechanism />
+        <Proof />
+        <Cta />
     </main>;
 }

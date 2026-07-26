@@ -201,6 +201,27 @@ cl def:pub segment(line: str, entities: list[str]) -> list[dict[str, any]] {
     return out;
 }
 
+"""Who appears on each card as an avatar, keyed by the card's head.
+
+Kept apart from `ARTIFACTS` rather than folded into it because `entities` is a
+mix of people, systems and document ids — `["Jax", "Janice", "CONF-ENG-001"]` —
+and rendering an avatar for CONF-ENG-001 is exactly the kind of detail that
+reads as carelessness at the size these cards are shown.
+"""
+cl glob CARD_PEOPLE: dict[str, list[str]] = {
+    "#engineering_backend":        ["Jax", "Janice"],
+    "ENG-123":                     ["Morgan"],
+    "CONF-ENG-001":                ["Bill"],
+    "ZD-2214":                     ["Priya"],
+    "Platform sync — transcript":  ["Morgan", "Felix"],
+    "PR #4471":                    ["Jax", "Dmitri"]
+};
+
+cl def:pub card_people(head: str) -> list[str] {
+    if head in CARD_PEOPLE { return CARD_PEOPLE[head]; }
+    return [];
+}
+
 """ARTIFACTS with each line pre-split into segments.
 
 Computed once at mount and held in state: the scroll handler re-renders the
@@ -217,7 +238,7 @@ cl def:pub parse_artifacts() -> list[dict[str, any]] {
         }
         out = out + [{
             "kind": a["kind"], "head": a["head"], "meta": a["meta"],
-            "rows": rows, "entities": ents
+            "rows": rows, "entities": ents, "people": card_people(a["head"])
         }];
     }
     return out;

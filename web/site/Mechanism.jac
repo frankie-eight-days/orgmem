@@ -22,7 +22,7 @@ glob WALKER_SRC: str = """walker Visibility {
 
 glob ELIMINATED: list[str] = [
     "No database. No ORM. No vector store. No prompt strings.",
-    "Persistence is reachability from `root`. Retrieval is traversal.",
+    "Persistence is reachability from the root node. Retrieval is traversal.",
     "The client calls walkers directly — no REST, no HTTP client, no CORS.",
     "One language, whole stack."
 ];
@@ -55,14 +55,23 @@ def:pub Cta() -> JsxElement {
 
         <Link className="cta-button" to="/app">{"Open orgmem →"}</Link>
 
-        {#* `source on GitHub` is deliberately not a link: nobody has given me the
-            repository URL and inventing one would be the only false claim on the
-            page. Wrap it in an <a> the moment the URL is known. *#}
+        {#* Every URL here was supplied or verified, none inferred. The dataset
+            card is the one already asserted in `Landing.jac`'s JSON-LD
+            `isBasedOn`; the orgforge repository was given directly; the source
+            link is the repository this branch is pushed to. *#}
         <footer className="foot">
             <p>
                 {"Built at JacHacks SF 2026 · Jac 0.34 · dataset "}
-                <code className="foot-code">{"aeriesec/orgforge"}</code>
-                {" (MIT) · source on GitHub"}
+                <a className="foot-link" href="https://huggingface.co/datasets/aeriesec/orgforge"
+                   target="_blank" rel="noreferrer noopener">
+                    <code className="foot-code">{"aeriesec/orgforge"}</code>
+                </a>
+                {" (MIT) · "}
+                <a className="foot-link" href="https://github.com/tenurehq/orgforge"
+                   target="_blank" rel="noreferrer noopener">{"orgforge on GitHub"}</a>
+                {" · "}
+                <a className="foot-link" href="https://github.com/frankie-eight-days/orgmem"
+                   target="_blank" rel="noreferrer noopener">{"orgmem source"}</a>
             </p>
         </footer>
     </section>;
