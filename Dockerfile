@@ -23,9 +23,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://bun.sh/install | bash
 ENV JAC_BUN=/root/.bun/bin/bun
 
-# The language itself, pinned to the commit the wiki was distilled from.
+# The language itself, pinned to the SAME commit as vendor/jac locally — the
+# one this app is actually known to compile under. An earlier version of this
+# file pinned 5f4f7b6d (the commit the wiki was distilled from, 0.34.1) and
+# swallowed the failure with `|| true`, so the build silently fell back to
+# whatever main happened to be. That build died at boot with
+#   pass OwnershipCheckPass requires analysis 'inference' which has not run
+#   for .../passes/ecmascript/view_ir.jac
+# i.e. a compiler regression on main, not a fault in this app. No `|| true`:
+# a checkout that fails must fail the build loudly rather than drift.
 RUN git clone https://github.com/jaseci-labs/jac /opt/jac \
-    && cd /opt/jac && git checkout 5f4f7b6d || true
+    && cd /opt/jac && git checkout 6c88a38
 ENV PYTHONPATH=/opt/jac/jac
 
 # Console script + metadata only; PYTHONPATH above wins for the actual import.

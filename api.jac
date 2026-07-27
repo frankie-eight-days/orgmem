@@ -838,7 +838,7 @@ def:pub chat(text: str, ctx_domain: str) -> dict[str, any] {
 # the wrong walker run against the right graph — visible in the trace, which is
 # reported back and rendered.
 
-glob MAX_TURNS: int = 6;
+glob MAX_TURNS: int = 10;
 
 glob TOOLS: list[dict[str, any]] = [
     {"type": "function", "function": {

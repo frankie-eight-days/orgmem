@@ -75,7 +75,7 @@ def history_of(msgs: list) -> str {
 # added to `agent_step`'s return later in the session never reach the client —
 # they are present in the source and absent on the wire. The client already
 # knows which iteration it is on, so it does not need to be told.
-glob AGENT_TURNS: int = 6;
+glob AGENT_TURNS: int = 10;
 
 # Ticks the reveal is spread over, so the walk lasts FRAMES * HOP_MS (~6s)
 # whether the walker crossed four edges or a hundred and twenty.
@@ -356,7 +356,9 @@ def:pub AppScreen -> JsxElement {
         got: list[any] = [{}];
         seen: list[any] = [[]];
         hops: list[int] = [0];
-        while hops[0] < 8 {
+        # Safety cap only — kept a couple of passes ABOVE AGENT_TURNS so the
+        # server's own limit is what ends the loop, not this.
+        while hops[0] < 12 {
             hops[0] = hops[0] + 1;
             # Declared INSIDE the loop so each pass gets a fresh binding, and
             # named `state` because the RPC turns the caller's variable names
