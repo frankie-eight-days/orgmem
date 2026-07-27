@@ -42,6 +42,16 @@ RUN pip install --no-cache-dir jaclang==0.16.7 pandas pyarrow
 WORKDIR /app
 COPY . /app
 
+# Warm the compiler's own cache at BUILD time, into the image layer.
+# Locally this cache is long since warm, which is why `jac dev` never shows the
+# "Setting up Jac for first use" banner. In a fresh container it bootstraps the
+# compiler and loads app.jac in the same breath, and that reentrant path is
+# where OwnershipCheckPass/inference blows up. Doing it as its own step first
+# separates the two. `|| true` is deliberate HERE and only here: this step is a
+# cache warm, and a failure in it must not fail the image — the runtime command
+# is still the thing that decides whether the app works.
+RUN jac build app.jac || true
+
 # The graph is built at import (~6s, 76,787 edges) and held in memory, so this
 # must be a long-lived process — it is not a serverless workload.
 ENV PORT=8080
